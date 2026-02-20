@@ -1,7 +1,7 @@
 // HumanID - Universal Digital Identity Platform
-// Prisma Schema - 28 tables, 8 domains
+// Prisma Schema - 36 tables, 10 domains
 // Database: PostgreSQL 15+
-// Version: 3.0.0
+// Version: 4.0.0
 
 generator client {
   provider = "prisma-client-js"
@@ -120,6 +120,9 @@ enum AnchorEntityType {
 
 enum AnchorChain {
   POLYGON
+  ETHEREUM
+  SOLANA
+  ARBITRUM
 
   @@map("anchor_chain")
 }
@@ -249,6 +252,67 @@ enum RegionCode {
   @@map("region_code")
 }
 
+enum FederationProtocol {
+  SAML
+  OIDC
+  DID_VC
+
+  @@map("federation_protocol")
+}
+
+enum FederationDirection {
+  IMPORT
+  EXPORT
+  BIDIRECTIONAL
+
+  @@map("federation_direction")
+}
+
+enum FraudAlertSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+
+  @@map("fraud_alert_severity")
+}
+
+enum FraudAlertStatus {
+  OPEN
+  INVESTIGATING
+  CONFIRMED
+  DISMISSED
+
+  @@map("fraud_alert_status")
+}
+
+enum OrgDidType {
+  COMPANY
+  DEPARTMENT
+  DEVICE
+  SERVICE
+
+  @@map("org_did_type")
+}
+
+enum ProposalStatus {
+  DRAFT
+  ACTIVE
+  PASSED
+  REJECTED
+  EXECUTED
+
+  @@map("proposal_status")
+}
+
+enum IssuanceDelegationStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+
+  @@map("issuance_delegation_status")
+}
+
 // ============================================================================
 // DOMAIN 1: IDENTITY
 // ============================================================================
@@ -303,7 +367,6 @@ model DID {
   documents          DIDDocument[]
   biometricBindings  BiometricBinding[]
   recoveryConfigs    RecoveryConfig[]
-  blockchainAnchors  BlockchainAnchor[]
 
   // Credentials where this DID is the holder
   credentialsHeld    Credential[]        @relation("holder_did")
@@ -431,7 +494,6 @@ model Credential {
   issuer        Issuer?                 @relation(fields: [issuerId], references: [id])
   template      CredentialTemplate?     @relation(fields: [templateId], references: [id])
   presentations CredentialPresentation[]
-  anchors       BlockchainAnchor[]
 
   @@index([holderDidId])
   @@index([issuerDidId])
@@ -586,9 +648,7 @@ model BlockchainAnchor {
   anchoredAt DateTime? @map("anchored_at")
   createdAt  DateTime  @default(now()) @map("created_at")
 
-  // Polymorphic relations (linked via entityType + entityId)
-  did        DID?        @relation(fields: [entityId], references: [id], map: "fk_anchor_did")
-  credential Credential? @relation(fields: [entityId], references: [id], map: "fk_anchor_credential")
+  // Note: entityId is polymorphic (references DIDs, credentials, etc.) — no FK constraint
 
   @@index([entityType, entityId])
   @@index([status])
@@ -925,4 +985,193 @@ model OfflineToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("offline_tokens")
+}
+
+// ============================================================================
+// DOMAIN 9: FEDERATION & CROSS-CHAIN
+// ============================================================================
+
+/// Identity federation links between external IdPs and DIDs
+model FederationLink {
+  id               String              @id @default(uuid())
+  userId           String              @map("user_id")
+  didId            String              @map("did_id")
+  protocol         FederationProtocol
+  direction        FederationDirection  @default(BIDIRECTIONAL)
+  externalIssuer   String              @map("external_issuer") // IdP URL or entity ID
+  externalSubject  String              @map("external_subject") // External user ID
+  metadata         Json?               // IdP metadata, mappings
+  isActive         Boolean             @default(true) @map("is_active")
+
+  lastSyncedAt DateTime? @map("last_synced_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([protocol, externalIssuer, externalSubject])
+  @@index([userId])
+  @@index([didId])
+  @@index([protocol])
+  @@map("federation_links")
+}
+
+/// Fraud detection alerts for suspicious credential activity
+model FraudAlert {
+  id              String             @id @default(uuid())
+  credentialId    String?            @map("credential_id")
+  issuerId        String?            @map("issuer_id")
+  alertType       String             @map("alert_type") // duplicate_credential, suspicious_issuance, etc.
+  severity        FraudAlertSeverity
+  status          FraudAlertStatus   @default(OPEN)
+  description     String             @db.Text
+  riskScore       Float              @map("risk_score") // 0.0-1.0
+  evidence        Json?              // Supporting data
+  assignee        String?
+  resolution      String?            @db.Text
+
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([severity])
+  @@index([credentialId])
+  @@index([issuerId])
+  @@index([alertType])
+  @@map("fraud_alerts")
+}
+
+// ============================================================================
+// DOMAIN 10: GOVERNANCE & ORGANIZATIONAL IDENTITY
+// ============================================================================
+
+/// Organizational DIDs for companies, departments, devices
+model OrgDid {
+  id            String     @id @default(uuid())
+  orgId         String     @map("org_id") // Organization that owns this DID
+  didId         String     @unique @map("did_id")
+  type          OrgDidType
+  name          String
+  description   String?
+  parentOrgDidId String?   @map("parent_org_did_id") // Hierarchy
+  metadata      Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  parentOrgDid OrgDid?  @relation("org_did_hierarchy", fields: [parentOrgDidId], references: [id])
+  childOrgDids OrgDid[] @relation("org_did_hierarchy")
+
+  @@index([orgId])
+  @@index([didId])
+  @@index([type])
+  @@index([parentOrgDidId])
+  @@map("org_dids")
+}
+
+/// Delegated issuance rights for sub-entities
+model IssuanceDelegation {
+  id                 String                   @id @default(uuid())
+  parentIssuerId     String                   @map("parent_issuer_id")
+  delegateIssuerId   String                   @map("delegate_issuer_id")
+  allowedTypes       Json                     @map("allowed_types") // Credential types allowed
+  maxDepth           Int                      @default(1) @map("max_depth")
+  status             IssuanceDelegationStatus @default(ACTIVE)
+
+  expiresAt  DateTime? @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@unique([parentIssuerId, delegateIssuerId])
+  @@index([parentIssuerId])
+  @@index([delegateIssuerId])
+  @@index([status])
+  @@map("issuance_delegations")
+}
+
+/// Governance proposals for protocol evolution
+model GovernanceProposal {
+  id          String         @id @default(uuid())
+  authorId    String         @map("author_id")
+  title       String
+  description String         @db.Text
+  category    String         // protocol, parameter, policy
+  status      ProposalStatus @default(DRAFT)
+  votesFor    Int            @default(0) @map("votes_for")
+  votesAgainst Int           @default(0) @map("votes_against")
+  quorum      Int            @default(100) // Minimum votes needed
+
+  votingStartsAt DateTime? @map("voting_starts_at")
+  votingEndsAt   DateTime? @map("voting_ends_at")
+  executedAt     DateTime? @map("executed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  votes GovernanceVote[]
+
+  @@index([status])
+  @@index([authorId])
+  @@index([category])
+  @@map("governance_proposals")
+}
+
+/// Votes on governance proposals
+model GovernanceVote {
+  id         String  @id @default(uuid())
+  proposalId String  @map("proposal_id")
+  voterId    String  @map("voter_id") // User ID
+  vote       Boolean // true = for, false = against
+  weight     Int     @default(1) // Weighted voting
+  reason     String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  proposal GovernanceProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, voterId])
+  @@index([proposalId])
+  @@index([voterId])
+  @@map("governance_votes")
+}
+
+/// Supported locales for i18n
+model Locale {
+  id        String  @id @default(uuid())
+  code      String  @unique // e.g., "en", "fr", "de", "ja"
+  name      String  // e.g., "English", "French"
+  nativeName String @map("native_name") // e.g., "English", "Français"
+  isActive  Boolean @default(true) @map("is_active")
+  completionPercent Float @default(0) @map("completion_percent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  translations Translation[]
+
+  @@index([code])
+  @@map("locales")
+}
+
+/// Translation strings
+model Translation {
+  id       String @id @default(uuid())
+  localeId String @map("locale_id")
+  key      String // e.g., "auth.login.title"
+  value    String @db.Text
+  context  String? // UI context hint
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  locale Locale @relation(fields: [localeId], references: [id], onDelete: Cascade)
+
+  @@unique([localeId, key])
+  @@index([localeId])
+  @@index([key])
+  @@map("translations")
 }

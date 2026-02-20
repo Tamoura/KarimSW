@@ -42,6 +42,13 @@ import agentRoutes from './routes/v1/agents.js';
 import governmentRoutes from './routes/v1/government.js';
 import securityRoutes from './routes/v1/security.js';
 import offlineRoutes from './routes/v1/offline.js';
+import anchoringRoutes from './routes/v1/anchoring.js';
+import federationRoutes from './routes/v1/federation.js';
+import fraudRoutes from './routes/v1/fraud.js';
+import orgDidRoutes from './routes/v1/org-dids.js';
+import issuanceDelegationRoutes from './routes/v1/issuance-delegation.js';
+import governanceRoutes from './routes/v1/governance.js';
+import i18nRoutes from './routes/v1/i18n.js';
 
 // Utils
 import { logger } from './utils/logger.js';
@@ -258,6 +265,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(governmentRoutes, { prefix: '/api/v1/government' });
   await fastify.register(securityRoutes, { prefix: '/api/v1/security' });
   await fastify.register(offlineRoutes, { prefix: '/api/v1/offline' });
+  await fastify.register(anchoringRoutes, { prefix: '/api/v1/anchoring' });
+  await fastify.register(federationRoutes, { prefix: '/api/v1/federation' });
+  await fastify.register(fraudRoutes, { prefix: '/api/v1/fraud' });
+  await fastify.register(orgDidRoutes, { prefix: '/api/v1/org-dids' });
+  await fastify.register(issuanceDelegationRoutes, { prefix: '/api/v1/issuance-delegation' });
+  await fastify.register(governanceRoutes, { prefix: '/api/v1/governance' });
+  await fastify.register(i18nRoutes, { prefix: '/api/v1/i18n' });
 
   // /.well-known/security.txt - RFC 9116
   fastify.get('/.well-known/security.txt', async (_request, reply) => {
