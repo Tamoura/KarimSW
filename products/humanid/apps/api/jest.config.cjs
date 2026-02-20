@@ -8,10 +8,17 @@ module.exports = {
     '^.+\\.ts$': ['ts-jest', {
       diagnostics: false,
     }],
+    '^.+\\.js$': ['ts-jest', {
+      diagnostics: false,
+      useESM: false,
+    }],
   },
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!@noble/ed25519/)',
+  ],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',

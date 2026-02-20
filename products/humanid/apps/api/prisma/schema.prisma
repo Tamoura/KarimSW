@@ -179,13 +179,14 @@ model User {
 
 /// Decentralized Identifiers owned by users
 model DID {
-  id           String    @id @default(uuid())
-  userId       String    @map("user_id")
-  did          String    @unique // did:humanid:base58(pubkey)
-  method       String    @default("humanid")
-  publicKey    String    @map("public_key") // Ed25519 public key (base58)
-  status       DIDStatus @default(ACTIVE)
-  keyAgreement Json?     @map("key_agreement") // X25519 for encryption
+  id                  String    @id @default(uuid())
+  userId              String    @map("user_id")
+  did                 String    @unique // did:humanid:base58(pubkey)
+  method              String    @default("humanid")
+  publicKey           String    @map("public_key") // Ed25519 public key (base58)
+  encryptedPrivateKey String?   @map("encrypted_private_key") @db.Text // AES-256-GCM encrypted
+  status              DIDStatus @default(ACTIVE)
+  keyAgreement        Json?     @map("key_agreement") // X25519 for encryption
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
