@@ -26,6 +26,9 @@ import didRoutes from './routes/v1/dids.js';
 import credentialRoutes from './routes/v1/credentials.js';
 import walletRoutes from './routes/v1/wallet.js';
 import verifyRoutes from './routes/v1/verify.js';
+import issuerRoutes from './routes/v1/issuers.js';
+import templateRoutes from './routes/v1/templates.js';
+import webauthnRoutes from './routes/v1/webauthn.js';
 
 // Utils
 import { logger } from './utils/logger.js';
@@ -226,6 +229,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(credentialRoutes, { prefix: '/api/v1/credentials' });
   await fastify.register(walletRoutes, { prefix: '/api/v1/wallet' });
   await fastify.register(verifyRoutes, { prefix: '/api/v1/verify' });
+  await fastify.register(issuerRoutes, { prefix: '/api/v1/issuers' });
+  await fastify.register(templateRoutes, { prefix: '/api/v1/templates' });
+  await fastify.register(webauthnRoutes, { prefix: '/api/v1/webauthn' });
 
   // Validate :id path parameters
   const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
