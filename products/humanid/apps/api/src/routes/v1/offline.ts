@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { createHash, createHmac } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
+import { deriveHmacKey, timingSafeCompare } from '../../utils/encryption.js';
 
 const createTokenSchema = z.object({
   credentialId: z.string().uuid(),
@@ -70,8 +71,9 @@ const offlineRoutes: FastifyPluginAsync = async (fastify) => {
         expiresAt: expiresAt.toISOString(),
       };
 
-      // Sign with HMAC using credential hash as key
-      const signature = createHmac('sha256', credential.credentialHash)
+      // Sign with HMAC using a derived secret key (not the public credential hash)
+      const hmacKey = deriveHmacKey('offline-token', credential.id);
+      const signature = createHmac('sha256', hmacKey)
         .update(JSON.stringify(payload))
         .digest('hex');
 
@@ -97,7 +99,7 @@ const offlineRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
@@ -152,12 +154,13 @@ const offlineRoutes: FastifyPluginAsync = async (fastify) => {
 
       if (!credential) throw new AppError(404, 'not-found', 'Associated credential not found');
 
-      // Verify signature
-      const expectedSignature = createHmac('sha256', credential.credentialHash)
+      // Verify signature using derived HMAC key (timing-safe comparison)
+      const hmacKey = deriveHmacKey('offline-token', credential.id);
+      const expectedSignature = createHmac('sha256', hmacKey)
         .update(JSON.stringify(body.payload))
         .digest('hex');
 
-      const signatureValid = body.signature === expectedSignature;
+      const signatureValid = timingSafeCompare(body.signature, expectedSignature);
       const isExpired = token.expiresAt < new Date();
       const credentialActive = credential.status === 'ACTIVE';
 
@@ -177,7 +180,7 @@ const offlineRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
@@ -207,7 +210,7 @@ const offlineRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }

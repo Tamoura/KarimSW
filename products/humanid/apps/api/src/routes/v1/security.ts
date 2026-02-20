@@ -8,6 +8,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { AppError } from '../../types/index.js';
+import { buildRequireAdmin } from '../../utils/middleware.js';
 
 const reportSchema = z.object({
   reporterEmail: z.string().email(),
@@ -35,12 +36,7 @@ const advisorySchema = z.object({
 });
 
 const securityRoutes: FastifyPluginAsync = async (fastify) => {
-  async function requireAdmin(request: Parameters<typeof fastify.authenticate>[0]) {
-    await fastify.authenticate(request);
-    if (request.currentUser!.role !== 'ADMIN') {
-      throw new AppError(403, 'forbidden', 'Admin access required');
-    }
-  }
+  const requireAdmin = buildRequireAdmin(fastify);
 
   // POST /api/v1/security/reports - Submit vulnerability report (no auth)
   fastify.post('/reports', async (request, reply) => {
@@ -68,7 +64,7 @@ const securityRoutes: FastifyPluginAsync = async (fastify) => {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
@@ -140,7 +136,7 @@ const securityRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
@@ -176,7 +172,7 @@ const securityRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }

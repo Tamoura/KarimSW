@@ -51,19 +51,33 @@ const issuanceDelegationRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
   });
 
-  // GET /api/v1/issuance-delegation - List delegations
+  // GET /api/v1/issuance-delegation - List delegations (scoped to user's issuers)
   fastify.get('/', async (request, reply) => {
     try {
       await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
       const query = request.query as { parentIssuerId?: string; delegateIssuerId?: string };
 
-      const where: Record<string, unknown> = {};
+      // Get the user's issuer IDs to scope delegations
+      const userIssuers = await fastify.prisma.issuer.findMany({
+        where: { userId },
+        select: { id: true },
+      });
+      const issuerIds = userIssuers.map(i => i.id);
+
+      // Show delegations where user is parent or delegate
+      const where: Record<string, unknown> = {
+        OR: [
+          { parentIssuerId: { in: issuerIds } },
+          { delegateIssuerId: { in: issuerIds } },
+        ],
+      };
       if (query.parentIssuerId) where.parentIssuerId = query.parentIssuerId;
       if (query.delegateIssuerId) where.delegateIssuerId = query.delegateIssuerId;
 

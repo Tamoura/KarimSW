@@ -10,6 +10,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { AppError } from '../../types/index.js';
+import { buildRequireAdmin } from '../../utils/middleware.js';
 
 // In-memory stores (would be DB tables in production)
 const partnerships: Array<Record<string, unknown>> = [];
@@ -33,12 +34,7 @@ const schemeSchema = z.object({
 });
 
 const governmentRoutes: FastifyPluginAsync = async (fastify) => {
-  async function requireAdmin(request: Parameters<typeof fastify.authenticate>[0]) {
-    await fastify.authenticate(request);
-    if (request.currentUser!.role !== 'ADMIN') {
-      throw new AppError(403, 'forbidden', 'Admin access required');
-    }
-  }
+  const requireAdmin = buildRequireAdmin(fastify);
 
   // POST /api/v1/government/partnerships/apply
   fastify.post('/partnerships/apply', async (request, reply) => {
@@ -59,7 +55,7 @@ const governmentRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
@@ -98,7 +94,7 @@ const governmentRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }

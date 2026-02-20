@@ -47,19 +47,42 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
   });
 
-  // GET /api/v1/anchoring - List anchors
+  // GET /api/v1/anchoring - List anchors (scoped to user's entities)
   fastify.get('/', async (request, reply) => {
     try {
       await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
       const query = request.query as { chain?: string; status?: string; entityType?: string };
 
-      const where: Record<string, unknown> = {};
+      // Get user's DID IDs to scope anchors to owned entities
+      const userDids = await fastify.prisma.dID.findMany({
+        where: { userId },
+        select: { id: true },
+      });
+      const didIds = userDids.map(d => d.id);
+
+      // Get user's credential IDs (as holder or issuer)
+      const userCredentials = await fastify.prisma.credential.findMany({
+        where: {
+          OR: [
+            { holderDidId: { in: didIds } },
+            { issuerDidId: { in: didIds } },
+          ],
+        },
+        select: { id: true },
+      });
+      const credentialIds = userCredentials.map(c => c.id);
+
+      // Scope anchors to user's DIDs and credentials
+      const entityIds = [...didIds, ...credentialIds];
+
+      const where: Record<string, unknown> = { entityId: { in: entityIds } };
       if (query.chain) where.chain = query.chain;
       if (query.status) where.status = query.status;
       if (query.entityType) where.entityType = query.entityType;

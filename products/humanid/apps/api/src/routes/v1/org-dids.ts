@@ -19,11 +19,25 @@ const createOrgDidSchema = z.object({
 });
 
 const orgDidRoutes: FastifyPluginAsync = async (fastify) => {
+  // Helper: verify the authenticated user is a member of the given org
+  async function requireOrgMembership(userId: string, orgId: string) {
+    const membership = await fastify.prisma.organizationMember.findFirst({
+      where: { userId, orgId },
+    });
+    if (!membership) {
+      throw new AppError(403, 'forbidden', 'Not a member of this organization');
+    }
+    return membership;
+  }
+
   // POST /api/v1/org-dids - Create org DID
   fastify.post('/', async (request, reply) => {
     try {
       await fastify.authenticate(request);
       const body = createOrgDidSchema.parse(request.body);
+
+      // Verify the user is a member of the org
+      await requireOrgMembership(request.currentUser!.id, body.orgId);
 
       const orgDid = await fastify.prisma.orgDid.create({
         data: {
@@ -48,7 +62,7 @@ const orgDidRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
@@ -63,6 +77,9 @@ const orgDidRoutes: FastifyPluginAsync = async (fastify) => {
 
       const parent = await fastify.prisma.orgDid.findUnique({ where: { id } });
       if (!parent) throw new AppError(404, 'not-found', 'Parent org DID not found');
+
+      // Verify the user is a member of the parent's org
+      await requireOrgMembership(request.currentUser!.id, parent.orgId);
 
       const child = await fastify.prisma.orgDid.create({
         data: {
@@ -88,20 +105,33 @@ const orgDidRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
   });
 
-  // GET /api/v1/org-dids - List org DIDs
+  // GET /api/v1/org-dids - List org DIDs (scoped to user's orgs)
   fastify.get('/', async (request, reply) => {
     try {
       await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
       const query = request.query as { orgId?: string; type?: string };
 
-      const where: Record<string, unknown> = {};
-      if (query.orgId) where.orgId = query.orgId;
+      // Scope to orgs the user is a member of
+      const userOrgs = await fastify.prisma.organizationMember.findMany({
+        where: { userId },
+        select: { orgId: true },
+      });
+      const orgIds = userOrgs.map(o => o.orgId);
+
+      const where: Record<string, unknown> = { orgId: { in: orgIds } };
+      if (query.orgId) {
+        if (!orgIds.includes(query.orgId)) {
+          throw new AppError(403, 'forbidden', 'Not a member of this organization');
+        }
+        where.orgId = query.orgId;
+      }
       if (query.type) where.type = query.type;
 
       const orgDids = await fastify.prisma.orgDid.findMany({
@@ -149,6 +179,9 @@ const orgDidRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (!root) throw new AppError(404, 'not-found', 'Org DID not found');
+
+      // Verify the user is a member of this org DID's org
+      await requireOrgMembership(request.currentUser!.id, root.orgId);
 
       function buildTree(node: typeof root): Record<string, unknown> {
         return {
