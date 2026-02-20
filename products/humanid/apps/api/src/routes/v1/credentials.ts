@@ -143,7 +143,12 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
       if (issuerDid.encryptedPrivateKey) {
         const privateKeyHex = decryptPrivateKey(issuerDid.encryptedPrivateKey);
         const privateKey = deserializePrivateKey(privateKeyHex);
-        proof = buildEd25519Proof(issuerDid.did, credentialData, privateKey);
+        const baseProof = buildEd25519Proof(issuerDid.did, credentialData, privateKey);
+        // Include the signed data hash so verification can replay the exact bytes
+        proof = {
+          ...baseProof,
+          signedDataHash: createHash('sha256').update(credentialData).digest('hex'),
+        };
       } else {
         // Fallback for DIDs created before H2 (no encrypted private key)
         proof = {
