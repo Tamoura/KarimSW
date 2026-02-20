@@ -29,6 +29,44 @@ const createWebhookSchema = z.object({
   description: z.string().max(500).optional(),
 });
 
+/**
+ * SSRF protection: reject URLs pointing to private/internal networks.
+ */
+function validateWebhookUrl(url: string): void {
+  const parsed = new URL(url);
+
+  // Must be HTTPS in production
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new AppError(400, 'bad-request', 'Webhook URL must use HTTPS or HTTP');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Block private IPs and localhost
+  const blockedPatterns = [
+    /^localhost$/i,
+    /^127\.\d+\.\d+\.\d+$/,          // 127.0.0.0/8
+    /^10\.\d+\.\d+\.\d+$/,           // 10.0.0.0/8
+    /^172\.(1[6-9]|2\d|3[01])\./,    // 172.16.0.0/12
+    /^192\.168\.\d+\.\d+$/,          // 192.168.0.0/16
+    /^169\.254\.\d+\.\d+$/,          // link-local
+    /^0\.0\.0\.0$/,
+    /^\[?::1\]?$/,                    // IPv6 loopback
+    /^\[?fe80:/i,                     // IPv6 link-local
+    /^\[?fc00:/i,                     // IPv6 unique local
+    /^\[?fd/i,                        // IPv6 unique local
+    /\.internal$/i,
+    /\.local$/i,
+    /\.localhost$/i,
+  ];
+
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(hostname)) {
+      throw new AppError(400, 'bad-request', 'Webhook URL must not point to a private or internal network');
+    }
+  }
+}
+
 const webhookRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/webhooks - Create webhook
   fastify.post('/', async (request, reply) => {
@@ -36,6 +74,9 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const body = createWebhookSchema.parse(request.body);
       const userId = request.currentUser!.id;
+
+      // SSRF protection: validate URL is not internal
+      validateWebhookUrl(body.url);
 
       // Validate event types
       for (const event of body.events) {
@@ -193,6 +234,9 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
           status: 'PENDING',
         },
       });
+
+      // SSRF protection: re-validate URL before delivery
+      validateWebhookUrl(webhook.url);
 
       // Attempt delivery (fire-and-forget for test)
       let deliveryStatus = 'FAILED';

@@ -7,30 +7,14 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { createHash, randomBytes, createDecipheriv } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { AppError } from '../../types/index.js';
+import { decryptClaims } from '../../utils/encryption.js';
 
 const convertSchema = z.object({
   credentialId: z.string().uuid(),
   targetFormat: z.enum(['SD-JWT-VC', 'JSON-LD']),
 });
-
-function getEncryptionKey(): Buffer {
-  const key = process.env.CLAIMS_ENCRYPTION_KEY;
-  if (!key) throw new AppError(500, 'server-error', 'Encryption key not configured');
-  return Buffer.from(key, 'hex');
-}
-
-function decryptClaims(encrypted: string): Record<string, unknown> {
-  const [ivB64, tagB64, dataB64] = encrypted.split(':');
-  const iv = Buffer.from(ivB64, 'base64');
-  const authTag = Buffer.from(tagB64, 'base64');
-  const data = Buffer.from(dataB64, 'base64');
-  const decipher = createDecipheriv('aes-256-gcm', getEncryptionKey(), iv);
-  decipher.setAuthTag(authTag);
-  const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
-  return JSON.parse(decrypted.toString('utf8'));
-}
 
 const eidasRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/eidas/status - Compliance readiness

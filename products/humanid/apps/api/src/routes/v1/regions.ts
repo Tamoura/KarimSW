@@ -52,7 +52,7 @@ const regionRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
@@ -143,7 +143,7 @@ const regionRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }

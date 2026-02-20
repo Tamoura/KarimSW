@@ -8,6 +8,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { AppError } from '../../types/index.js';
+import { buildRequireAdmin } from '../../utils/middleware.js';
 
 const scanSchema = z.object({
   credentialId: z.string().uuid(),
@@ -20,12 +21,7 @@ const updateAlertSchema = z.object({
 });
 
 const fraudRoutes: FastifyPluginAsync = async (fastify) => {
-  async function requireAdmin(request: Parameters<typeof fastify.authenticate>[0]) {
-    await fastify.authenticate(request);
-    if (request.currentUser!.role !== 'ADMIN') {
-      throw new AppError(403, 'forbidden', 'Admin access required');
-    }
-  }
+  const requireAdmin = buildRequireAdmin(fastify);
 
   // POST /api/v1/fraud/scan - Scan credential for anomalies
   fastify.post('/scan', async (request, reply) => {
@@ -62,7 +58,7 @@ const fraudRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }
@@ -131,7 +127,7 @@ const fraudRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       if (error instanceof z.ZodError) {
-        return reply.code(400).send({ status: 400, detail: error.errors.map(e => e.message).join('; ') });
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }

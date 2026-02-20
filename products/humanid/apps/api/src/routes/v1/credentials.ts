@@ -12,10 +12,11 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
+import { createHash } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { buildEd25519Proof, deserializePrivateKey } from '../../utils/did-crypto.js';
+import { encryptClaims, decryptClaims, decryptPrivateKey } from '../../utils/encryption.js';
 
 // ==================== Zod Schemas ====================
 
@@ -30,66 +31,6 @@ const issueCredentialSchema = z.object({
 const revokeSchema = z.object({
   reason: z.string().max(500).optional(),
 });
-
-// ==================== Crypto Helpers ====================
-
-function getEncryptionKey(): Buffer {
-  const key = process.env.CLAIMS_ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error('CLAIMS_ENCRYPTION_KEY is required');
-  }
-  return Buffer.from(key, 'hex');
-}
-
-function encryptClaims(claims: Record<string, unknown>): string {
-  const key = getEncryptionKey();
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', key, iv);
-
-  const plaintext = JSON.stringify(claims);
-  const encrypted = Buffer.concat([
-    cipher.update(plaintext, 'utf8'),
-    cipher.final(),
-  ]);
-  const authTag = cipher.getAuthTag();
-
-  // Format: iv:authTag:ciphertext (all base64)
-  return `${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
-}
-
-function decryptClaims(encryptedClaims: string): Record<string, unknown> {
-  const key = getEncryptionKey();
-  const [ivB64, tagB64, dataB64] = encryptedClaims.split(':');
-
-  const iv = Buffer.from(ivB64, 'base64');
-  const authTag = Buffer.from(tagB64, 'base64');
-  const encrypted = Buffer.from(dataB64, 'base64');
-
-  const decipher = createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(authTag);
-
-  const decrypted = Buffer.concat([
-    decipher.update(encrypted),
-    decipher.final(),
-  ]);
-
-  return JSON.parse(decrypted.toString('utf8'));
-}
-
-/**
- * Decrypt an AES-256-GCM encrypted private key.
- */
-function decryptPrivateKey(encrypted: string): string {
-  const key = getEncryptionKey();
-  const [ivB64, tagB64, dataB64] = encrypted.split(':');
-  const iv = Buffer.from(ivB64, 'base64');
-  const authTag = Buffer.from(tagB64, 'base64');
-  const data = Buffer.from(dataB64, 'base64');
-  const decipher = createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(authTag);
-  const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
-  return decrypted.toString('utf8');
-}
 
 // ==================== Routes ====================
 
@@ -126,6 +67,9 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
       // Encrypt claims
       const encryptedClaims = encryptClaims(body.claims);
 
+      // Use a single timestamp for both the signed data and the proof
+      const issuanceTimestamp = new Date().toISOString();
+
       // Build the credential data that will be signed
       const credentialData = JSON.stringify({
         '@context': ['https://www.w3.org/2018/credentials/v1'],
@@ -135,8 +79,12 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
           id: holderDid.did,
           ...body.claims,
         },
-        issuanceDate: new Date().toISOString(),
+        issuanceDate: issuanceTimestamp,
       });
+
+      const credentialHash = createHash('sha256')
+        .update(credentialData)
+        .digest('hex');
 
       // Sign with real Ed25519 key (decrypt issuer's private key)
       let proof;
@@ -144,27 +92,22 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
         const privateKeyHex = decryptPrivateKey(issuerDid.encryptedPrivateKey);
         const privateKey = deserializePrivateKey(privateKeyHex);
         const baseProof = buildEd25519Proof(issuerDid.did, credentialData, privateKey);
-        // Include the signed data hash so verification can replay the exact bytes
         proof = {
           ...baseProof,
-          signedDataHash: createHash('sha256').update(credentialData).digest('hex'),
+          created: issuanceTimestamp, // Override with exact issuanceDate for verifiable reconstruction
+          signedDataHash: credentialHash,
         };
       } else {
         // Fallback for DIDs created before H2 (no encrypted private key)
         proof = {
           type: 'Ed25519Signature2020',
-          created: new Date().toISOString(),
+          created: issuanceTimestamp,
           verificationMethod: `${issuerDid.did}#key-1`,
           proofPurpose: 'assertionMethod',
           proofValue: randomBytes(64).toString('base64'),
           legacy: true,
         };
       }
-
-      // Hash for blockchain anchoring
-      const credentialHash = createHash('sha256')
-        .update(credentialData)
-        .digest('hex');
 
       const credential = await fastify.prisma.credential.create({
         data: {

@@ -136,10 +136,25 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+  // Account lockout constants
+  const MAX_LOGIN_ATTEMPTS = 5;
+  const LOCKOUT_DURATION_SECONDS = 900; // 15 minutes
+
   // POST /api/v1/auth/login
   fastify.post('/login', async (request, reply) => {
     try {
       const body = loginSchema.parse(request.body);
+
+      // Account lockout check (Redis-based)
+      const lockoutKey = `login:lockout:${body.email}`;
+      const attemptsKey = `login:attempts:${body.email}`;
+
+      if (fastify.redis) {
+        const lockoutTtl = await fastify.redis.ttl(lockoutKey);
+        if (lockoutTtl > 0) {
+          throw new AppError(429, 'account-locked', `Account temporarily locked. Try again in ${Math.ceil(lockoutTtl / 60)} minutes`);
+        }
+      }
 
       // Find user
       const user = await fastify.prisma.user.findUnique({
@@ -147,6 +162,14 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (!user) {
+        // Increment failed attempts even for non-existent users (prevent enumeration)
+        if (fastify.redis) {
+          const attempts = await fastify.redis.incr(attemptsKey);
+          await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
+          if (attempts >= MAX_LOGIN_ATTEMPTS) {
+            await fastify.redis.set(lockoutKey, '1', 'EX', LOCKOUT_DURATION_SECONDS);
+          }
+        }
         throw new AppError(401, 'invalid-credentials', 'Invalid email or password');
       }
 
@@ -157,7 +180,21 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       // Verify password
       const isValid = await verifyPassword(body.password, user.passwordHash);
       if (!isValid) {
+        // Track failed login attempt
+        if (fastify.redis) {
+          const attempts = await fastify.redis.incr(attemptsKey);
+          await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
+          if (attempts >= MAX_LOGIN_ATTEMPTS) {
+            await fastify.redis.set(lockoutKey, '1', 'EX', LOCKOUT_DURATION_SECONDS);
+            logger.warn('Account locked due to too many failed login attempts', { email: body.email });
+          }
+        }
         throw new AppError(401, 'invalid-credentials', 'Invalid email or password');
+      }
+
+      // Successful login — clear failed attempts
+      if (fastify.redis) {
+        await fastify.redis.del(attemptsKey, lockoutKey);
       }
 
       // Generate tokens

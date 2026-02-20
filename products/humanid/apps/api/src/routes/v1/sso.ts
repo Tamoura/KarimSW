@@ -9,6 +9,8 @@ import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
+import { encrypt, decrypt } from '../../utils/encryption.js';
+import { buildRequireOrgOwner } from '../../utils/middleware.js';
 
 const oidcConfigSchema = z.object({
   orgId: z.string().uuid(),
@@ -24,14 +26,7 @@ const samlConfigSchema = z.object({
 });
 
 const ssoRoutes: FastifyPluginAsync = async (fastify) => {
-  async function requireOrgOwner(userId: string, orgId: string) {
-    const membership = await fastify.prisma.organizationMember.findUnique({
-      where: { orgId_userId: { orgId, userId } },
-    });
-    if (!membership || membership.status !== 'ACTIVE' || !['OWNER', 'ADMIN'].includes(membership.role)) {
-      throw new AppError(403, 'forbidden', 'Only organization owners/admins can manage SSO');
-    }
-  }
+  const requireOrgOwner = buildRequireOrgOwner(fastify);
 
   // POST /api/v1/sso/oidc - Configure OIDC provider
   fastify.post('/oidc', async (request, reply) => {
@@ -46,7 +41,7 @@ const ssoRoutes: FastifyPluginAsync = async (fastify) => {
         oidc: {
           discoveryUrl: body.discoveryUrl,
           clientId: body.clientId,
-          clientSecret: body.clientSecret,
+          clientSecret: encrypt(body.clientSecret), // encrypted at rest
           configuredAt: new Date().toISOString(),
           configuredBy: userId,
         },
@@ -150,6 +145,14 @@ const ssoRoutes: FastifyPluginAsync = async (fastify) => {
 
       if (!org) {
         throw new AppError(404, 'not-found', 'Organization not found');
+      }
+
+      // Verify user is a member of the org
+      const membership = await fastify.prisma.organizationMember.findFirst({
+        where: { userId: request.currentUser!.id, orgId: query.orgId },
+      });
+      if (!membership) {
+        throw new AppError(403, 'forbidden', 'Not a member of this organization');
       }
 
       const ssoProvider = (org.ssoProvider as Record<string, unknown>) || {};

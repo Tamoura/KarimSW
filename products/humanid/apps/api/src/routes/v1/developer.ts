@@ -10,7 +10,8 @@ import { z } from 'zod';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { generateApiKey, hashApiKey, getApiKeyPrefix } from '../../utils/crypto.js';
-import { createHash, randomBytes, createCipheriv } from 'crypto';
+import { createHash } from 'crypto';
+import { encryptPrivateKey, encryptClaims } from '../../utils/encryption.js';
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
@@ -272,12 +273,7 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
         const documentHash = createHash('sha256').update(JSON.stringify(document)).digest('hex');
 
         // Encrypt private key
-        const encKey = Buffer.from(process.env.CLAIMS_ENCRYPTION_KEY!, 'hex');
-        const iv = randomBytes(12);
-        const cipher = createCipheriv('aes-256-gcm', encKey, iv);
-        const encrypted = Buffer.concat([cipher.update(serialized.privateKeyHex, 'utf8'), cipher.final()]);
-        const authTag = cipher.getAuthTag();
-        const encryptedPrivateKey = `${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
+        const encryptedPrivateKey = encryptPrivateKey(serialized.privateKeyHex);
 
         const didRecord = await fastify.prisma.dID.create({
           data: {
@@ -309,15 +305,9 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
         const issuerDidId = testDids[0].id;
         const holderDidId = testDids[1].id;
 
-        const encKey = Buffer.from(process.env.CLAIMS_ENCRYPTION_KEY!, 'hex');
-        const iv = randomBytes(12);
-        const cipher = createCipheriv('aes-256-gcm', encKey, iv);
-        const plaintext = JSON.stringify(ct.claims);
-        const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-        const authTag = cipher.getAuthTag();
-        const encryptedClaims = `${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
+        const encryptedClaims = encryptClaims(ct.claims);
 
-        const credentialHash = createHash('sha256').update(plaintext).digest('hex');
+        const credentialHash = createHash('sha256').update(JSON.stringify(ct.claims)).digest('hex');
 
         const credential = await fastify.prisma.credential.create({
           data: {

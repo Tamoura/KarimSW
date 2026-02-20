@@ -38,9 +38,8 @@ const auditRoutes: FastifyPluginAsync = async (fastify) => {
       if (query.entityType) {
         where.entityType = query.entityType;
       }
-      if (query.actorId) {
-        where.userId = query.actorId;
-      }
+      // actorId filtering is restricted to the authenticated user's own events
+      // (admin-level cross-user audit viewing requires admin role — not yet implemented)
       if (query.from || query.to) {
         where.createdAt = {} as Record<string, Date>;
         if (query.from) (where.createdAt as Record<string, Date>).gte = new Date(query.from);
