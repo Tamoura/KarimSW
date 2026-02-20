@@ -29,6 +29,7 @@ import verifyRoutes from './routes/v1/verify.js';
 import issuerRoutes from './routes/v1/issuers.js';
 import templateRoutes from './routes/v1/templates.js';
 import webauthnRoutes from './routes/v1/webauthn.js';
+import developerRoutes from './routes/v1/developer.js';
 
 // Utils
 import { logger } from './utils/logger.js';
@@ -232,6 +233,84 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(issuerRoutes, { prefix: '/api/v1/issuers' });
   await fastify.register(templateRoutes, { prefix: '/api/v1/templates' });
   await fastify.register(webauthnRoutes, { prefix: '/api/v1/webauthn' });
+  await fastify.register(developerRoutes, { prefix: '/api/v1/developer' });
+
+  // OpenAPI spec endpoint
+  fastify.get('/api/v1/openapi.json', async (_request, reply) => {
+    return reply.send({
+      openapi: '3.0.3',
+      info: {
+        title: 'HumanID API',
+        version: '1.0.0',
+        description: 'Universal Digital Identity Platform — Decentralized identity, verifiable credentials, and zero-knowledge proofs.',
+        contact: { name: 'HumanID', url: 'https://humanid.dev' },
+        license: { name: 'Proprietary' },
+      },
+      servers: [
+        { url: 'http://localhost:5013', description: 'Local development' },
+        { url: 'https://api.humanid.dev', description: 'Production' },
+      ],
+      paths: {
+        '/api/v1/auth/register': {
+          post: { summary: 'Register a new user', tags: ['Auth'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['email', 'password'], properties: { email: { type: 'string', format: 'email' }, password: { type: 'string', minLength: 8 }, role: { type: 'string', enum: ['HOLDER', 'ISSUER', 'DEVELOPER'] } } } } } }, responses: { '201': { description: 'User created' }, '409': { description: 'Email already registered' } } },
+        },
+        '/api/v1/auth/login': {
+          post: { summary: 'Login', tags: ['Auth'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['email', 'password'], properties: { email: { type: 'string' }, password: { type: 'string' } } } } } }, responses: { '200': { description: 'JWT token pair' }, '401': { description: 'Invalid credentials' } } },
+        },
+        '/api/v1/auth/refresh': {
+          post: { summary: 'Refresh token', tags: ['Auth'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['refresh_token'], properties: { refresh_token: { type: 'string' } } } } } }, responses: { '200': { description: 'New token pair' } } },
+        },
+        '/api/v1/dids': {
+          post: { summary: 'Create a new DID', tags: ['DIDs'], security: [{ BearerAuth: [] }], responses: { '201': { description: 'DID created with Ed25519 key pair' } } },
+          get: { summary: 'List user DIDs', tags: ['DIDs'], security: [{ BearerAuth: [] }], responses: { '200': { description: 'List of DIDs' } } },
+        },
+        '/api/v1/dids/{id}': {
+          get: { summary: 'Resolve a DID', tags: ['DIDs'], security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { '200': { description: 'DID with document' } } },
+          patch: { summary: 'Update DID status', tags: ['DIDs'], security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string', enum: ['ACTIVE', 'SUSPENDED'] } } } } } }, responses: { '200': { description: 'DID updated' } } },
+          delete: { summary: 'Deactivate a DID', tags: ['DIDs'], security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'DID deactivated' } } },
+        },
+        '/api/v1/credentials': {
+          post: { summary: 'Issue a credential', tags: ['Credentials'], security: [{ BearerAuth: [] }], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['holderDidId', 'issuerDidId', 'credentialType', 'claims'], properties: { holderDidId: { type: 'string', format: 'uuid' }, issuerDidId: { type: 'string', format: 'uuid' }, credentialType: { type: 'string' }, claims: { type: 'object' }, expiresAt: { type: 'string', format: 'date-time' } } } } } }, responses: { '201': { description: 'Credential issued' } } },
+          get: { summary: 'List credentials', tags: ['Credentials'], security: [{ BearerAuth: [] }], parameters: [{ name: 'role', in: 'query', schema: { type: 'string', enum: ['holder', 'issuer'] } }], responses: { '200': { description: 'Credential list' } } },
+        },
+        '/api/v1/credentials/{id}': {
+          get: { summary: 'Get credential details', tags: ['Credentials'], security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Credential with decrypted claims' } } },
+        },
+        '/api/v1/credentials/{id}/revoke': {
+          post: { summary: 'Revoke a credential', tags: ['Credentials'], security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Credential revoked' } } },
+        },
+        '/api/v1/verify/credentials': {
+          post: { summary: 'Verify a credential (4-step)', tags: ['Verification'], security: [{ BearerAuth: [] }], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['credentialId'], properties: { credentialId: { type: 'string', format: 'uuid' } } } } } }, responses: { '200': { description: 'Verification result with checks' } } },
+        },
+        '/api/v1/wallet/credentials': {
+          get: { summary: 'List wallet credentials', tags: ['Wallet'], security: [{ BearerAuth: [] }], responses: { '200': { description: 'Holder credentials' } } },
+        },
+        '/api/v1/developer/keys': {
+          post: { summary: 'Create API key', tags: ['Developer'], security: [{ BearerAuth: [] }], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['name', 'environment'], properties: { name: { type: 'string' }, environment: { type: 'string', enum: ['SANDBOX', 'PRODUCTION'] } } } } } }, responses: { '201': { description: 'API key created (key shown once)' } } },
+          get: { summary: 'List API keys', tags: ['Developer'], security: [{ BearerAuth: [] }], responses: { '200': { description: 'API key list' } } },
+        },
+        '/api/v1/developer/keys/{id}/rotate': {
+          post: { summary: 'Rotate API key', tags: ['Developer'], security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'New key (old revoked)' } } },
+        },
+        '/api/v1/developer/keys/{id}': {
+          delete: { summary: 'Revoke API key', tags: ['Developer'], security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Key revoked' } } },
+        },
+      },
+      components: {
+        securitySchemes: {
+          BearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'JWT access token or API key' },
+        },
+      },
+      tags: [
+        { name: 'Auth', description: 'Authentication and session management' },
+        { name: 'DIDs', description: 'Decentralized Identifier management' },
+        { name: 'Credentials', description: 'Verifiable credential lifecycle' },
+        { name: 'Verification', description: 'Credential verification engine' },
+        { name: 'Wallet', description: 'Holder credential wallet' },
+        { name: 'Developer', description: 'API key and developer tools' },
+      ],
+    });
+  });
 
   // Validate :id path parameters
   const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
