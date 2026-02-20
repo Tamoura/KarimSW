@@ -361,14 +361,16 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       });
       expect(voteRes.statusCode).toBe(201);
 
-      // Second vote by same user (unique constraint violation — route doesn't handle P2002 gracefully)
+      // Second vote by same user (unique constraint → 409 Conflict)
       const doubleVoteRes = await app.inject({
         method: 'POST',
         url: `/api/v1/governance/proposals/${activeProposalId}/vote`,
         headers: { authorization: `Bearer ${devToken}` },
         payload: { vote: false },
       });
-      expect(doubleVoteRes.statusCode).toBe(500);
+      expect(doubleVoteRes.statusCode).toBe(409);
+      const body = doubleVoteRes.json();
+      expect(body.detail).toContain('already voted');
     });
 
     it('should allow a different user to vote on the same proposal', async () => {
@@ -427,7 +429,7 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       });
       expect(res.statusCode).toBe(404);
       const body = res.json();
-      expect(body.message || body.detail).toContain('not found');
+      expect(body.detail).toContain('not found');
     });
 
     it('should return results with vote counts and quorum info', async () => {

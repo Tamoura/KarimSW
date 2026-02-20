@@ -125,28 +125,33 @@ const i18nRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /api/v1/i18n/translations/:locale - Get translations for locale
   fastify.get('/translations/:locale', async (request, reply) => {
-    const { locale: localeCode } = request.params as { locale: string };
+    try {
+      const { locale: localeCode } = request.params as { locale: string };
 
-    const locale = await fastify.prisma.locale.findUnique({
-      where: { code: localeCode },
-    });
-    if (!locale) throw new AppError(404, 'not-found', 'Locale not found');
+      const locale = await fastify.prisma.locale.findUnique({
+        where: { code: localeCode },
+      });
+      if (!locale) throw new AppError(404, 'not-found', 'Locale not found');
 
-    const translations = await fastify.prisma.translation.findMany({
-      where: { localeId: locale.id },
-      orderBy: { key: 'asc' },
-    });
+      const translations = await fastify.prisma.translation.findMany({
+        where: { localeId: locale.id },
+        orderBy: { key: 'asc' },
+      });
 
-    const translationMap: Record<string, string> = {};
-    for (const t of translations) {
-      translationMap[t.key] = t.value;
+      const translationMap: Record<string, string> = {};
+      for (const t of translations) {
+        translationMap[t.key] = t.value;
+      }
+
+      return reply.send({
+        locale: localeCode,
+        translations: translationMap,
+        total: translations.length,
+      });
+    } catch (error) {
+      if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
+      throw error;
     }
-
-    return reply.send({
-      locale: localeCode,
-      translations: translationMap,
-      total: translations.length,
-    });
   });
 };
 

@@ -112,22 +112,23 @@ const governanceRoutes: FastifyPluginAsync = async (fastify) => {
         throw new AppError(400, 'bad-request', 'Voting period has ended');
       }
 
-      await fastify.prisma.governanceVote.create({
-        data: {
-          proposalId: id,
-          voterId: userId,
-          vote: body.vote,
-          reason: body.reason,
-        },
-      });
-
-      // Update vote counts
-      const updated = await fastify.prisma.governanceProposal.update({
-        where: { id },
-        data: body.vote
-          ? { votesFor: { increment: 1 } }
-          : { votesAgainst: { increment: 1 } },
-      });
+      // Atomic: create vote + increment count in a single transaction
+      const [, updated] = await fastify.prisma.$transaction([
+        fastify.prisma.governanceVote.create({
+          data: {
+            proposalId: id,
+            voterId: userId,
+            vote: body.vote,
+            reason: body.reason,
+          },
+        }),
+        fastify.prisma.governanceProposal.update({
+          where: { id },
+          data: body.vote
+            ? { votesFor: { increment: 1 } }
+            : { votesAgainst: { increment: 1 } },
+        }),
+      ]);
 
       return reply.code(201).send({
         proposalId: id,
@@ -140,35 +141,44 @@ const governanceRoutes: FastifyPluginAsync = async (fastify) => {
       if (error instanceof z.ZodError) {
         return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
+      // Handle Prisma unique constraint violation (double vote)
+      if ((error as Record<string, unknown>).code === 'P2002') {
+        return reply.code(409).send({ type: 'https://humanid.dev/errors/conflict', title: 'Conflict', status: 409, detail: 'You have already voted on this proposal', request_id: request.id });
+      }
       throw error;
     }
   });
 
   // GET /api/v1/governance/proposals/:id/results - Proposal results
   fastify.get('/proposals/:id/results', async (request, reply) => {
-    const { id } = request.params as { id: string };
+    try {
+      const { id } = request.params as { id: string };
 
-    const proposal = await fastify.prisma.governanceProposal.findUnique({
-      where: { id },
-      include: { _count: { select: { votes: true } } },
-    });
+      const proposal = await fastify.prisma.governanceProposal.findUnique({
+        where: { id },
+        include: { _count: { select: { votes: true } } },
+      });
 
-    if (!proposal) throw new AppError(404, 'not-found', 'Proposal not found');
+      if (!proposal) throw new AppError(404, 'not-found', 'Proposal not found');
 
-    const totalVotes = proposal.votesFor + proposal.votesAgainst;
+      const totalVotes = proposal.votesFor + proposal.votesAgainst;
 
-    return reply.send({
-      proposalId: proposal.id,
-      title: proposal.title,
-      status: proposal.status,
-      votesFor: proposal.votesFor,
-      votesAgainst: proposal.votesAgainst,
-      totalVotes,
-      quorum: proposal.quorum,
-      quorumReached: totalVotes >= proposal.quorum,
-      approval: totalVotes > 0 ? Math.round((proposal.votesFor / totalVotes) * 100) : 0,
-      votingEndsAt: proposal.votingEndsAt?.toISOString(),
-    });
+      return reply.send({
+        proposalId: proposal.id,
+        title: proposal.title,
+        status: proposal.status,
+        votesFor: proposal.votesFor,
+        votesAgainst: proposal.votesAgainst,
+        totalVotes,
+        quorum: proposal.quorum,
+        quorumReached: totalVotes >= proposal.quorum,
+        approval: totalVotes > 0 ? Math.round((proposal.votesFor / totalVotes) * 100) : 0,
+        votingEndsAt: proposal.votingEndsAt?.toISOString(),
+      });
+    } catch (error) {
+      if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
+      throw error;
+    }
   });
 
   // GET /api/v1/governance/params - Governance parameters

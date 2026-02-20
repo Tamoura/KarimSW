@@ -271,7 +271,7 @@ describe('i18n Extended - /api/v1/i18n error branches', () => {
       });
       expect(res.statusCode).toBe(404);
       const body = res.json();
-      expect(body.message || body.detail).toContain('not found');
+      expect(body.detail).toContain('not found');
     });
 
     it('should return translations for existing locale', async () => {
