@@ -1,7 +1,7 @@
 // HumanID - Universal Digital Identity Platform
-// Prisma Schema - 14 tables, 5 domains
+// Prisma Schema - 20 tables, 6 domains
 // Database: PostgreSQL 15+
-// Version: 1.0.0
+// Version: 2.0.0
 
 generator client {
   provider = "prisma-client-js"
@@ -146,6 +146,45 @@ enum ApiKeyStatus {
   @@map("api_key_status")
 }
 
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+
+  @@map("org_role")
+}
+
+enum OrgMemberStatus {
+  INVITED
+  ACTIVE
+  REMOVED
+
+  @@map("org_member_status")
+}
+
+enum WebhookStatus {
+  ACTIVE
+  DISABLED
+
+  @@map("webhook_status")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+
+  @@map("webhook_delivery_status")
+}
+
+enum IssuerTier {
+  SELF_DECLARED
+  VERIFIED
+  QUALIFIED
+
+  @@map("issuer_tier")
+}
+
 // ============================================================================
 // DOMAIN 1: IDENTITY
 // ============================================================================
@@ -167,6 +206,8 @@ model User {
   apiKeys   ApiKey[]
   auditLogs AuditLog[]
   issuers   Issuer[]
+  orgMemberships OrganizationMember[]
+  webhooks       Webhook[]
 
   // Verification requests created by this user (as verifier)
   verificationRequests VerificationRequest[]
@@ -345,6 +386,9 @@ model CredentialTemplate {
   optionalAttributes Json    @map("optional_attributes")
   defaultExpiryDays  Int?    @map("default_expiry_days")
   isActive           Boolean @default(true) @map("is_active")
+  isPublic           Boolean @default(false) @map("is_public") // Visible in marketplace
+  forkCount          Int     @default(0) @map("fork_count")
+  forkedFromId       String? @map("forked_from_id")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -379,7 +423,6 @@ model CredentialPresentation {
   holderDid           DID                  @relation("presentation_holder", fields: [holderDidId], references: [id])
   verifierDid         DID?                 @relation("presentation_verifier", fields: [verifierDidId], references: [id])
   verificationRequest VerificationRequest? @relation(fields: [verificationRequestId], references: [id])
-  auditLogs           AuditLog[]
 
   @@index([credentialId])
   @@index([holderDidId])
@@ -431,8 +474,11 @@ model Issuer {
   organizationName     String            @map("organization_name")
   legalEntityId        String?           @map("legal_entity_id")
   trustStatus          IssuerTrustStatus @default(PENDING) @map("trust_status")
+  tier                 IssuerTier        @default(SELF_DECLARED)
   allowedCredentialTypes Json?           @map("allowed_credential_types")
   verificationDocuments Json?            @map("verification_documents")
+  domainVerified       Boolean           @default(false) @map("domain_verified")
+  website              String?
 
   verifiedAt DateTime? @map("verified_at")
   revokedAt  DateTime? @map("revoked_at")
@@ -513,23 +559,132 @@ model ApiKey {
 model AuditLog {
   id         String  @id @default(uuid())
   userId     String? @map("user_id")
+  orgId      String? @map("org_id")
   action     String  // e.g., "did.created", "credential.issued", "verification.completed"
   entityType String  @map("entity_type") // "did", "credential", "verification", "issuer"
   entityId   String  @map("entity_id")
   metadata   Json?   // Request details, outcome, additional context
   ipAddress  String? @map("ip_address")
   userAgent  String? @map("user_agent")
+  prevHash   String? @map("prev_hash") // SHA-256 of previous entry for tamper evidence
 
   createdAt DateTime @default(now()) @map("created_at")
 
   // Relations (optional -- audit logs may reference deleted entities)
   user         User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
-  presentation CredentialPresentation? @relation(fields: [entityId], references: [id], map: "fk_audit_presentation")
+  org          Organization?           @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  // Note: entityId is polymorphic (references DIDs, credentials, etc.) — no FK constraint
 
   @@index([userId])
+  @@index([orgId])
   @@index([action])
   @@index([entityType])
   @@index([entityId])
   @@index([createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+// ============================================================================
+// DOMAIN 6: ENTERPRISE
+// ============================================================================
+
+/// Organizations for multi-tenant enterprise access
+model Organization {
+  id          String  @id @default(uuid())
+  name        String
+  slug        String  @unique
+  domain      String? // For domain-based SSO enforcement
+  ssoProvider Json?   @map("sso_provider") // OIDC/SAML config
+  ssoEnforced Boolean @default(false) @map("sso_enforced")
+  settings    Json    @default("{}") // Org-level settings
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  members   OrganizationMember[]
+  webhooks  Webhook[]
+  auditLogs AuditLog[]
+
+  @@index([slug])
+  @@index([domain])
+  @@map("organizations")
+}
+
+/// Organization membership with RBAC roles
+model OrganizationMember {
+  id     String          @id @default(uuid())
+  orgId  String          @map("org_id")
+  userId String          @map("user_id")
+  role   OrgRole         @default(MEMBER)
+  status OrgMemberStatus @default(INVITED)
+
+  invitedBy  String?  @map("invited_by")
+  inviteEmail String? @map("invite_email")
+
+  joinedAt  DateTime? @map("joined_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@index([userId])
+  @@index([status])
+  @@map("organization_members")
+}
+
+/// Webhook endpoints for real-time event notifications
+model Webhook {
+  id          String        @id @default(uuid())
+  userId      String        @map("user_id")
+  orgId       String?       @map("org_id")
+  url         String        // Target URL
+  secret      String        // HMAC-SHA256 signing secret
+  events      Json          // Array of event types to subscribe to
+  status      WebhookStatus @default(ACTIVE)
+  description String?
+
+  lastDeliveredAt DateTime? @map("last_delivered_at")
+  failureCount    Int       @default(0) @map("failure_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org        Organization?     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([userId])
+  @@index([orgId])
+  @@index([status])
+  @@map("webhooks")
+}
+
+/// Webhook delivery log for debugging and retry tracking
+model WebhookDelivery {
+  id             String                @id @default(uuid())
+  webhookId      String                @map("webhook_id")
+  eventType      String                @map("event_type")
+  payload        Json
+  status         WebhookDeliveryStatus @default(PENDING)
+  httpStatusCode Int?                  @map("http_status_code")
+  responseBody   String?               @map("response_body") @db.Text
+  attempt        Int                   @default(1)
+  nextRetryAt    DateTime?             @map("next_retry_at")
+
+  deliveredAt DateTime? @map("delivered_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([status])
+  @@index([eventType])
+  @@index([createdAt(sort: Desc)])
+  @@map("webhook_deliveries")
 }

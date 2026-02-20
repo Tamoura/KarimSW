@@ -1,0 +1,343 @@
+/**
+ * Webhook Routes - /api/v1/webhooks
+ *
+ * Real-time event notification system with HMAC-SHA256 signing.
+ * Events: credential.issued, credential.verified, credential.revoked,
+ *         did.created, did.deactivated
+ */
+
+import { FastifyPluginAsync } from 'fastify';
+import { z } from 'zod';
+import { randomBytes, createHmac } from 'crypto';
+import { AppError } from '../../types/index.js';
+import { logger } from '../../utils/logger.js';
+
+const VALID_EVENTS = [
+  'credential.issued',
+  'credential.verified',
+  'credential.revoked',
+  'did.created',
+  'did.deactivated',
+  'did.suspended',
+  'verification.completed',
+  'webhook.test',
+];
+
+const createWebhookSchema = z.object({
+  url: z.string().url('Invalid URL'),
+  events: z.array(z.string()).min(1, 'At least one event required'),
+  description: z.string().max(500).optional(),
+});
+
+const webhookRoutes: FastifyPluginAsync = async (fastify) => {
+  // POST /api/v1/webhooks - Create webhook
+  fastify.post('/', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const body = createWebhookSchema.parse(request.body);
+      const userId = request.currentUser!.id;
+
+      // Validate event types
+      for (const event of body.events) {
+        if (!VALID_EVENTS.includes(event)) {
+          throw new AppError(400, 'bad-request', `Invalid event type: ${event}`);
+        }
+      }
+
+      const secret = `whsec_${randomBytes(24).toString('hex')}`;
+
+      const webhook = await fastify.prisma.webhook.create({
+        data: {
+          userId,
+          url: body.url,
+          secret,
+          events: body.events,
+          status: 'ACTIVE',
+          description: body.description,
+        },
+      });
+
+      logger.info('Webhook created', { webhookId: webhook.id, userId, events: body.events });
+
+      return reply.code(201).send({
+        id: webhook.id,
+        url: webhook.url,
+        secret, // Only shown once at creation
+        events: webhook.events,
+        status: webhook.status,
+        description: webhook.description,
+        createdAt: webhook.createdAt.toISOString(),
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({
+          type: 'https://humanid.dev/errors/validation-error',
+          title: 'Validation Error',
+          status: 400,
+          detail: error.errors.map((e) => e.message).join('; '),
+          request_id: request.id,
+        });
+      }
+      throw error;
+    }
+  });
+
+  // GET /api/v1/webhooks - List webhooks
+  fastify.get('/', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
+
+      const webhooks = await fastify.prisma.webhook.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          url: true,
+          events: true,
+          status: true,
+          description: true,
+          failureCount: true,
+          lastDeliveredAt: true,
+          createdAt: true,
+        },
+      });
+
+      return reply.send({
+        webhooks: webhooks.map((w) => ({
+          ...w,
+          lastDeliveredAt: w.lastDeliveredAt?.toISOString() || null,
+          createdAt: w.createdAt.toISOString(),
+        })),
+        total: webhooks.length,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+
+  // GET /api/v1/webhooks/:id - Get webhook
+  fastify.get('/:id', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const { id } = request.params as { id: string };
+      const userId = request.currentUser!.id;
+
+      const webhook = await fastify.prisma.webhook.findFirst({
+        where: { id, userId },
+        select: {
+          id: true,
+          url: true,
+          events: true,
+          status: true,
+          description: true,
+          failureCount: true,
+          lastDeliveredAt: true,
+          createdAt: true,
+        },
+      });
+
+      if (!webhook) {
+        throw new AppError(404, 'not-found', 'Webhook not found');
+      }
+
+      return reply.send({
+        ...webhook,
+        lastDeliveredAt: webhook.lastDeliveredAt?.toISOString() || null,
+        createdAt: webhook.createdAt.toISOString(),
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+
+  // POST /api/v1/webhooks/:id/test - Send test delivery
+  fastify.post('/:id/test', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const { id } = request.params as { id: string };
+      const userId = request.currentUser!.id;
+
+      const webhook = await fastify.prisma.webhook.findFirst({
+        where: { id, userId },
+      });
+
+      if (!webhook) {
+        throw new AppError(404, 'not-found', 'Webhook not found');
+      }
+
+      const testPayload = {
+        event: 'webhook.test',
+        timestamp: new Date().toISOString(),
+        data: {
+          message: 'This is a test webhook delivery from HumanID',
+          webhookId: webhook.id,
+        },
+      };
+
+      // Create delivery record
+      const delivery = await fastify.prisma.webhookDelivery.create({
+        data: {
+          webhookId: webhook.id,
+          eventType: 'webhook.test',
+          payload: testPayload,
+          status: 'PENDING',
+        },
+      });
+
+      // Attempt delivery (fire-and-forget for test)
+      let deliveryStatus = 'FAILED';
+      let httpStatusCode: number | null = null;
+      let responseBody: string | null = null;
+
+      try {
+        const signature = createHmac('sha256', webhook.secret)
+          .update(JSON.stringify(testPayload))
+          .digest('hex');
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+
+        const res = await fetch(webhook.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-HumanID-Signature': `sha256=${signature}`,
+            'X-HumanID-Event': 'webhook.test',
+          },
+          body: JSON.stringify(testPayload),
+          signal: controller.signal,
+        }).catch(() => null);
+
+        clearTimeout(timeout);
+
+        if (res) {
+          httpStatusCode = res.status;
+          responseBody = await res.text().catch(() => null);
+          deliveryStatus = res.ok ? 'DELIVERED' : 'FAILED';
+        }
+      } catch {
+        // Delivery failed, that's OK for test
+      }
+
+      await fastify.prisma.webhookDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: deliveryStatus as 'DELIVERED' | 'FAILED',
+          httpStatusCode,
+          responseBody,
+          deliveredAt: deliveryStatus === 'DELIVERED' ? new Date() : null,
+        },
+      });
+
+      return reply.send({
+        deliveryId: delivery.id,
+        status: deliveryStatus,
+        httpStatusCode,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+
+  // GET /api/v1/webhooks/:id/deliveries - Delivery log
+  fastify.get('/:id/deliveries', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const { id } = request.params as { id: string };
+      const userId = request.currentUser!.id;
+
+      const webhook = await fastify.prisma.webhook.findFirst({
+        where: { id, userId },
+      });
+
+      if (!webhook) {
+        throw new AppError(404, 'not-found', 'Webhook not found');
+      }
+
+      const query = request.query as { page?: string; limit?: string };
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
+
+      const [deliveries, total] = await Promise.all([
+        fastify.prisma.webhookDelivery.findMany({
+          where: { webhookId: id },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            eventType: true,
+            status: true,
+            httpStatusCode: true,
+            attempt: true,
+            deliveredAt: true,
+            createdAt: true,
+          },
+        }),
+        fastify.prisma.webhookDelivery.count({ where: { webhookId: id } }),
+      ]);
+
+      return reply.send({
+        deliveries: deliveries.map((d) => ({
+          ...d,
+          deliveredAt: d.deliveredAt?.toISOString() || null,
+          createdAt: d.createdAt.toISOString(),
+        })),
+        total,
+        page,
+        pageSize: limit,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+
+  // DELETE /api/v1/webhooks/:id - Delete webhook
+  fastify.delete('/:id', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const { id } = request.params as { id: string };
+      const userId = request.currentUser!.id;
+
+      const webhook = await fastify.prisma.webhook.findFirst({
+        where: { id, userId },
+      });
+
+      if (!webhook) {
+        throw new AppError(404, 'not-found', 'Webhook not found');
+      }
+
+      // Delete deliveries first, then webhook
+      await fastify.prisma.webhookDelivery.deleteMany({ where: { webhookId: id } });
+      await fastify.prisma.webhook.delete({ where: { id } });
+
+      logger.info('Webhook deleted', { webhookId: id, userId });
+
+      return reply.send({ message: 'Webhook deleted' });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+};
+
+export default webhookRoutes;
