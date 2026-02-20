@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
+import { buildEd25519Proof, deserializePrivateKey } from '../../utils/did-crypto.js';
 
 // ==================== Zod Schemas ====================
 
@@ -76,16 +77,18 @@ function decryptClaims(encryptedClaims: string): Record<string, unknown> {
 }
 
 /**
- * Build a minimal proof object (Ed25519Signature2020 placeholder).
+ * Decrypt an AES-256-GCM encrypted private key.
  */
-function buildProof(issuerDid: string) {
-  return {
-    type: 'Ed25519Signature2020',
-    created: new Date().toISOString(),
-    verificationMethod: `${issuerDid}#key-1`,
-    proofPurpose: 'assertionMethod',
-    proofValue: randomBytes(64).toString('base64'),
-  };
+function decryptPrivateKey(encrypted: string): string {
+  const key = getEncryptionKey();
+  const [ivB64, tagB64, dataB64] = encrypted.split(':');
+  const iv = Buffer.from(ivB64, 'base64');
+  const authTag = Buffer.from(tagB64, 'base64');
+  const data = Buffer.from(dataB64, 'base64');
+  const decipher = createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+  return decrypted.toString('utf8');
 }
 
 // ==================== Routes ====================
@@ -123,18 +126,39 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
       // Encrypt claims
       const encryptedClaims = encryptClaims(body.claims);
 
-      // Build proof
-      const proof = buildProof(issuerDid.did);
+      // Build the credential data that will be signed
+      const credentialData = JSON.stringify({
+        '@context': ['https://www.w3.org/2018/credentials/v1'],
+        type: ['VerifiableCredential', body.credentialType],
+        issuer: issuerDid.did,
+        credentialSubject: {
+          id: holderDid.did,
+          ...body.claims,
+        },
+        issuanceDate: new Date().toISOString(),
+      });
+
+      // Sign with real Ed25519 key (decrypt issuer's private key)
+      let proof;
+      if (issuerDid.encryptedPrivateKey) {
+        const privateKeyHex = decryptPrivateKey(issuerDid.encryptedPrivateKey);
+        const privateKey = deserializePrivateKey(privateKeyHex);
+        proof = buildEd25519Proof(issuerDid.did, credentialData, privateKey);
+      } else {
+        // Fallback for DIDs created before H2 (no encrypted private key)
+        proof = {
+          type: 'Ed25519Signature2020',
+          created: new Date().toISOString(),
+          verificationMethod: `${issuerDid.did}#key-1`,
+          proofPurpose: 'assertionMethod',
+          proofValue: randomBytes(64).toString('base64'),
+          legacy: true,
+        };
+      }
 
       // Hash for blockchain anchoring
       const credentialHash = createHash('sha256')
-        .update(JSON.stringify({
-          issuerDid: issuerDid.did,
-          holderDid: holderDid.did,
-          credentialType: body.credentialType,
-          claims: body.claims,
-          issuedAt: new Date().toISOString(),
-        }))
+        .update(credentialData)
         .digest('hex');
 
       const credential = await fastify.prisma.credential.create({
