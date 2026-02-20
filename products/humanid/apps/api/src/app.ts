@@ -36,6 +36,12 @@ import auditRoutes from './routes/v1/audit.js';
 import ssoRoutes from './routes/v1/sso.js';
 import eidasRoutes from './routes/v1/eidas.js';
 import marketplaceRoutes from './routes/v1/marketplace.js';
+import complianceRoutes from './routes/v1/compliance.js';
+import regionRoutes from './routes/v1/regions.js';
+import agentRoutes from './routes/v1/agents.js';
+import governmentRoutes from './routes/v1/government.js';
+import securityRoutes from './routes/v1/security.js';
+import offlineRoutes from './routes/v1/offline.js';
 
 // Utils
 import { logger } from './utils/logger.js';
@@ -246,6 +252,26 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(ssoRoutes, { prefix: '/api/v1/sso' });
   await fastify.register(eidasRoutes, { prefix: '/api/v1/eidas' });
   await fastify.register(marketplaceRoutes, { prefix: '/api/v1' });
+  await fastify.register(complianceRoutes, { prefix: '/api/v1/compliance' });
+  await fastify.register(regionRoutes, { prefix: '/api/v1/regions' });
+  await fastify.register(agentRoutes, { prefix: '/api/v1/agents' });
+  await fastify.register(governmentRoutes, { prefix: '/api/v1/government' });
+  await fastify.register(securityRoutes, { prefix: '/api/v1/security' });
+  await fastify.register(offlineRoutes, { prefix: '/api/v1/offline' });
+
+  // /.well-known/security.txt - RFC 9116
+  fastify.get('/.well-known/security.txt', async (_request, reply) => {
+    const securityTxt = [
+      'Contact: security@humanid.dev',
+      'Encryption: https://humanid.dev/.well-known/pgp-key.txt',
+      'Acknowledgments: https://humanid.dev/security/hall-of-fame',
+      'Policy: https://humanid.dev/security/bug-bounty',
+      'Preferred-Languages: en',
+      `Expires: ${new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString()}`,
+    ].join('\n');
+
+    return reply.type('text/plain').send(securityTxt);
+  });
 
   // OpenAPI spec endpoint
   fastify.get('/api/v1/openapi.json', async (_request, reply) => {

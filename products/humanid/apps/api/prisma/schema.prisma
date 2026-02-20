@@ -1,7 +1,7 @@
 // HumanID - Universal Digital Identity Platform
-// Prisma Schema - 20 tables, 6 domains
+// Prisma Schema - 28 tables, 8 domains
 // Database: PostgreSQL 15+
-// Version: 2.0.0
+// Version: 3.0.0
 
 generator client {
   provider = "prisma-client-js"
@@ -185,6 +185,70 @@ enum IssuerTier {
   @@map("issuer_tier")
 }
 
+enum AgentStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+
+  @@map("agent_status")
+}
+
+enum DelegationStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+
+  @@map("delegation_status")
+}
+
+enum ComplianceFramework {
+  SOC2
+  ISO27001
+  GDPR
+  HIPAA
+
+  @@map("compliance_framework")
+}
+
+enum ControlStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  IMPLEMENTED
+  VERIFIED
+  FAILED
+
+  @@map("control_status")
+}
+
+enum VulnerabilityStatus {
+  SUBMITTED
+  TRIAGED
+  CONFIRMED
+  FIXED
+  CLOSED
+  INVALID
+
+  @@map("vulnerability_status")
+}
+
+enum VulnerabilitySeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+
+  @@map("vulnerability_severity")
+}
+
+enum RegionCode {
+  EU_FRANKFURT
+  US_VIRGINIA
+  APAC_SINGAPORE
+
+  @@map("region_code")
+}
+
 // ============================================================================
 // DOMAIN 1: IDENTITY
 // ============================================================================
@@ -208,6 +272,8 @@ model User {
   issuers   Issuer[]
   orgMemberships OrganizationMember[]
   webhooks       Webhook[]
+  agents         AgentIdentity[]
+  delegationsGranted AgentDelegation[] @relation("delegation_granter")
 
   // Verification requests created by this user (as verifier)
   verificationRequests VerificationRequest[]
@@ -251,6 +317,8 @@ model DID {
 
   // Issuer profile linked to this DID
   issuerProfile Issuer?
+  // Agent identity linked to this DID
+  agentProfile  AgentIdentity?
 
   @@index([userId])
   @@index([did])
@@ -687,4 +755,174 @@ model WebhookDelivery {
   @@index([eventType])
   @@index([createdAt(sort: Desc)])
   @@map("webhook_deliveries")
+}
+
+// ============================================================================
+// DOMAIN 7: AI AGENT IDENTITY
+// ============================================================================
+
+/// AI Agent identity with DID binding and capability scoping
+model AgentIdentity {
+  id                  String      @id @default(uuid())
+  userId              String      @map("user_id") // Human owner
+  didId               String      @unique @map("did_id") // Agent's DID
+  name                String
+  description         String?
+  capabilities        Json        // Array of allowed actions
+  status              AgentStatus @default(ACTIVE)
+  parentAgentId       String?     @map("parent_agent_id") // For agent chains
+  maxDelegationDepth  Int         @default(1) @map("max_delegation_depth")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  did         DID               @relation(fields: [didId], references: [id])
+  parentAgent AgentIdentity?    @relation("agent_chain", fields: [parentAgentId], references: [id])
+  childAgents AgentIdentity[]   @relation("agent_chain")
+  delegations AgentDelegation[]
+
+  @@index([userId])
+  @@index([didId])
+  @@index([status])
+  @@map("agent_identities")
+}
+
+/// Delegation credential: human authorizes agent to act on their behalf
+model AgentDelegation {
+  id                   String           @id @default(uuid())
+  agentId              String           @map("agent_id")
+  granterUserId        String           @map("granter_user_id")
+  granterDidId         String           @map("granter_did_id")
+  delegatedPermissions Json             @map("delegated_permissions") // Scoped permissions
+  proofOfAuthorization Json             @map("proof_of_authorization") // Signed delegation proof
+  status               DelegationStatus @default(ACTIVE)
+
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  agent   AgentIdentity @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  granter User          @relation("delegation_granter", fields: [granterUserId], references: [id])
+
+  @@index([agentId])
+  @@index([granterUserId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("agent_delegations")
+}
+
+// ============================================================================
+// DOMAIN 8: COMPLIANCE & SECURITY
+// ============================================================================
+
+/// Compliance control tracking for SOC 2, ISO 27001, etc.
+model ComplianceControl {
+  id          String              @id @default(uuid())
+  framework   ComplianceFramework
+  controlId   String              @map("control_id") // e.g., "CC6.1" for SOC 2
+  title       String
+  description String              @db.Text
+  status      ControlStatus       @default(NOT_STARTED)
+  evidence    Json?               // Evidence references
+  assignee    String?             // User ID of person responsible
+  notes       String?             @db.Text
+
+  lastAuditedAt DateTime? @map("last_audited_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@unique([framework, controlId])
+  @@index([framework])
+  @@index([status])
+  @@map("compliance_controls")
+}
+
+/// Multi-region deployment registry
+model Region {
+  id                   String     @id @default(uuid())
+  code                 RegionCode @unique
+  name                 String     // "EU (Frankfurt)"
+  endpoint             String     // Region-specific API endpoint
+  healthStatus         String     @default("unknown") @map("health_status")
+  dataResidencyEnabled Boolean    @default(true) @map("data_residency_enabled")
+  latencyMs            Int?       @map("latency_ms")
+
+  lastHealthCheck DateTime? @map("last_health_check")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([code])
+  @@index([healthStatus])
+  @@map("regions")
+}
+
+/// Vulnerability reports for bug bounty program
+model VulnerabilityReport {
+  id                String                @id @default(uuid())
+  reporterEmail     String                @map("reporter_email")
+  title             String
+  description       String                @db.Text
+  severity          VulnerabilitySeverity
+  cvssScore         Float?                @map("cvss_score")
+  affectedComponent String               @map("affected_component")
+  stepsToReproduce  String               @map("steps_to_reproduce") @db.Text
+  status            VulnerabilityStatus   @default(SUBMITTED)
+  assignee          String?
+  bountyAmount      Float?                @map("bounty_amount")
+  paidAt            DateTime?             @map("paid_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  advisories SecurityAdvisory[]
+
+  @@index([status])
+  @@index([severity])
+  @@index([reporterEmail])
+  @@map("vulnerability_reports")
+}
+
+/// Published security advisories
+model SecurityAdvisory {
+  id                    String   @id @default(uuid())
+  vulnerabilityReportId String?  @map("vulnerability_report_id")
+  title                 String
+  description           String   @db.Text
+  severity              VulnerabilitySeverity
+  affectedVersions      Json     @map("affected_versions")
+  patchedVersions       Json     @map("patched_versions")
+
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  vulnerabilityReport VulnerabilityReport? @relation(fields: [vulnerabilityReportId], references: [id])
+
+  @@index([severity])
+  @@index([publishedAt])
+  @@map("security_advisories")
+}
+
+/// Pre-signed offline credential tokens for BLE/NFC exchange
+model OfflineToken {
+  id           String   @id @default(uuid())
+  credentialId String   @map("credential_id")
+  userId       String   @map("user_id")
+  payload      Json     // Pre-signed credential bundle
+  signature    String   // Ed25519 signature
+  expiresAt    DateTime @map("expires_at")
+
+  usedAt   DateTime? @map("used_at")
+  syncedAt DateTime? @map("synced_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([credentialId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("offline_tokens")
 }
