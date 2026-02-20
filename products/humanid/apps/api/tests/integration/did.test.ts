@@ -27,6 +27,7 @@ describe('DID Routes - /api/v1/dids', () => {
   beforeAll(async () => {
     process.env.JWT_SECRET = 'test-jwt-secret-for-did-tests';
     process.env.INTERNAL_API_KEY = 'test-internal-api-key';
+    process.env.CLAIMS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     app = await buildApp();
 
     // Create test user and login
@@ -59,6 +60,7 @@ describe('DID Routes - /api/v1/dids', () => {
     await prisma.user.delete({ where: { id: userId } });
     delete process.env.JWT_SECRET;
     delete process.env.INTERNAL_API_KEY;
+    delete process.env.CLAIMS_ENCRYPTION_KEY;
     await prisma.$disconnect();
     await app.close();
   });
@@ -78,10 +80,28 @@ describe('DID Routes - /api/v1/dids', () => {
       const body = res.json();
       expect(body).toHaveProperty('id');
       expect(body).toHaveProperty('did');
-      expect(body.did).toMatch(/^did:humanid:/);
+      // DID should use base58btc encoding (alphanumeric, no 0OIl)
+      expect(body.did).toMatch(/^did:humanid:[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$/);
       expect(body).toHaveProperty('publicKey');
+      // Public key should be base58 encoded
+      expect(body.publicKey).toMatch(/^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$/);
       expect(body.status).toBe('ACTIVE');
       expect(body.method).toBe('humanid');
+    });
+
+    it('should store encrypted private key in database', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/dids',
+        headers: { authorization: `Bearer ${accessToken}` },
+        payload: {},
+      });
+
+      const body = res.json();
+      const didRecord = await prisma.dID.findUnique({ where: { id: body.id } });
+      expect(didRecord).not.toBeNull();
+      // Private key should be encrypted (iv:tag:ciphertext format)
+      expect(didRecord!.encryptedPrivateKey).toMatch(/^[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/);
     });
 
     it('should create a DID document alongside the DID', async () => {

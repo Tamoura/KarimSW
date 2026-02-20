@@ -33,6 +33,7 @@
     "@fastify/helmet": "^13.0.2",
     "@fastify/jwt": "^10.0.0",
     "@fastify/rate-limit": "^10.3.0",
+    "@noble/ed25519": "^3.0.0",
     "@prisma/client": "^5.8.1",
     "bcrypt": "^6.0.0",
     "fastify": "^5.7.2",

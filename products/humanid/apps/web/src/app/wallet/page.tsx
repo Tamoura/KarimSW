@@ -26,14 +26,16 @@ interface Did {
   createdAt: string;
 }
 
-interface WalletData {
-  credentials: Credential[];
-  total: number;
+interface VerificationChecks {
+  signature: boolean;
+  issuerTrust: boolean;
+  revocation: boolean;
+  expiry: boolean;
 }
 
-interface DidsData {
-  dids: Did[];
-  total: number;
+interface VerificationResult {
+  verified: boolean;
+  checks: VerificationChecks;
 }
 
 function StatusBadge({ status }: { status: CredentialStatus }) {
@@ -79,13 +81,68 @@ function Spinner() {
   );
 }
 
+function CheckIcon({ pass }: { pass: boolean }) {
+  if (pass) {
+    return (
+      <svg className="w-4 h-4 text-success-600 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="w-4 h-4 text-danger-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
+function VerificationPanel({
+  result,
+  onClose,
+}: {
+  result: VerificationResult;
+  onClose: () => void;
+}) {
+  const checks: Array<{ key: keyof VerificationChecks; label: string }> = [
+    { key: "signature", label: "Cryptographic Signature" },
+    { key: "issuerTrust", label: "Issuer Trust" },
+    { key: "revocation", label: "Revocation Status" },
+    { key: "expiry", label: "Expiry Valid" },
+  ];
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3">
+      <div className={`rounded-lg px-3 py-2 mb-3 ${result.verified ? "bg-success-50 border border-success-200" : "bg-danger-50 border border-danger-200"}`}>
+        <p className={`text-sm font-semibold ${result.verified ? "text-success-700" : "text-danger-700"}`}>
+          {result.verified ? "Credential Verified" : "Verification Failed"}
+        </p>
+      </div>
+      <ul className="space-y-1.5">
+        {checks.map(({ key, label }) => (
+          <li key={key} className="flex items-center gap-2">
+            <CheckIcon pass={result.checks[key]} />
+            <span className="text-xs text-gray-700">{label}</span>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={onClose}
+        className="mt-3 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 function truncateDid(did: string, chars = 20): string {
   if (did.length <= chars + 6) return did;
-  return `${did.slice(0, chars)}…`;
+  return `${did.slice(0, chars)}\u2026`;
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "\u2014";
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -104,6 +161,9 @@ export default function WalletPage() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [acceptSuccess, setAcceptSuccess] = useState<string | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [verifyResults, setVerifyResults] = useState<Record<string, VerificationResult>>({});
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
     localStorage.removeItem("access_token");
@@ -127,15 +187,11 @@ export default function WalletPage() {
       return;
     }
 
-    if (!credRes.ok) {
-      throw new Error("Failed to load credentials.");
-    }
-    if (!didRes.ok) {
-      throw new Error("Failed to load DIDs.");
-    }
+    if (!credRes.ok) throw new Error("Failed to load credentials.");
+    if (!didRes.ok) throw new Error("Failed to load DIDs.");
 
-    const credData: WalletData = await credRes.json();
-    const didData: DidsData = await didRes.json();
+    const credData = await credRes.json();
+    const didData = await didRes.json();
 
     setCredentials(credData.credentials ?? []);
     setDids(didData.dids ?? []);
@@ -175,7 +231,11 @@ export default function WalletPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setAcceptError((data as { detail?: string; message?: string }).detail ?? (data as { message?: string }).message ?? "Failed to accept credential.");
+        setAcceptError(
+          (data as { detail?: string }).detail ??
+          (data as { message?: string }).message ??
+          "Failed to accept credential."
+        );
         return;
       }
 
@@ -187,6 +247,54 @@ export default function WalletPage() {
       setAcceptError("Could not connect to the server.");
     } finally {
       setAcceptingId(null);
+    }
+  }
+
+  async function handleVerify(id: string) {
+    const token = localStorage.getItem("access_token");
+    if (!token) { handleUnauthorized(); return; }
+
+    // Toggle off if already showing results
+    if (verifyResults[id]) {
+      setVerifyResults((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+
+    setVerifyingId(id);
+    setVerifyError(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/verify/credentials`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ credentialId: id }),
+      });
+
+      if (res.status === 401) { handleUnauthorized(); return; }
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setVerifyError(
+          (data as { detail?: string }).detail ??
+          (data as { message?: string }).message ??
+          "Verification failed."
+        );
+        return;
+      }
+
+      const result: VerificationResult = await res.json();
+      setVerifyResults((prev) => ({ ...prev, [id]: result }));
+    } catch {
+      setVerifyError("Could not connect to verification service.");
+    } finally {
+      setVerifyingId(null);
     }
   }
 
@@ -222,8 +330,11 @@ export default function WalletPage() {
               <Link href="/wallet/credentials" className="text-gray-500 hover:text-gray-900 transition-colors no-underline">
                 Credentials
               </Link>
-              <Link href="/wallet/sharing" className="text-gray-500 hover:text-gray-900 transition-colors no-underline">
-                Sharing
+              <Link href="/wallet/dids" className="text-gray-500 hover:text-gray-900 transition-colors no-underline">
+                DIDs
+              </Link>
+              <Link href="/wallet/security" className="text-gray-500 hover:text-gray-900 transition-colors no-underline">
+                Security
               </Link>
             </nav>
 
@@ -244,7 +355,6 @@ export default function WalletPage() {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page title */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Your Identity Wallet</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -252,7 +362,6 @@ export default function WalletPage() {
           </p>
         </div>
 
-        {/* Loading state */}
         {loading && (
           <div className="flex items-center justify-center py-24" role="status" aria-label="Loading wallet data">
             <div className="flex flex-col items-center gap-3">
@@ -260,12 +369,11 @@ export default function WalletPage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
               </svg>
-              <p className="text-sm text-gray-500">Loading your wallet…</p>
+              <p className="text-sm text-gray-500">Loading your wallet&hellip;</p>
             </div>
           </div>
         )}
 
-        {/* Fetch error */}
         {!loading && error && (
           <div role="alert" className="mb-6 flex items-start gap-3 rounded-lg bg-danger-50 border border-danger-200 px-4 py-3">
             <svg className="w-5 h-5 text-danger-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
@@ -277,7 +385,7 @@ export default function WalletPage() {
 
         {!loading && !error && (
           <>
-            {/* Accept feedback banners */}
+            {/* Action feedback banners */}
             {acceptSuccess && (
               <div role="status" className="mb-6 flex items-start gap-3 rounded-lg bg-success-50 border border-success-200 px-4 py-3">
                 <svg className="w-5 h-5 text-success-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
@@ -292,6 +400,14 @@ export default function WalletPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                 </svg>
                 <p className="text-sm text-danger-700">{acceptError}</p>
+              </div>
+            )}
+            {verifyError && (
+              <div role="alert" className="mb-6 flex items-start gap-3 rounded-lg bg-danger-50 border border-danger-200 px-4 py-3">
+                <svg className="w-5 h-5 text-danger-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                </svg>
+                <p className="text-sm text-danger-700">{verifyError}</p>
               </div>
             )}
 
@@ -319,7 +435,7 @@ export default function WalletPage() {
               </div>
             </div>
 
-            {/* Two-column layout: credentials list + sidebar */}
+            {/* Two-column layout */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Credentials list */}
               <div className="lg:col-span-2">
@@ -347,9 +463,12 @@ export default function WalletPage() {
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap mb-1">
-                              <p className="text-sm font-semibold text-gray-900 truncate">
+                              <Link
+                                href={`/wallet/credentials/${cred.id}`}
+                                className="text-sm font-semibold text-gray-900 hover:text-primary-600 no-underline"
+                              >
                                 {cred.credentialType}
-                              </p>
+                              </Link>
                               <StatusBadge status={cred.status} />
                             </div>
                             <p className="text-xs text-gray-400 font-mono truncate" title={cred.issuerDid}>
@@ -357,29 +476,65 @@ export default function WalletPage() {
                             </p>
                             <p className="text-xs text-gray-400 mt-1">
                               Issued {formatDate(cred.issuedAt)}
-                              {cred.expiresAt ? ` · Expires ${formatDate(cred.expiresAt)}` : ""}
+                              {cred.expiresAt ? ` \u00b7 Expires ${formatDate(cred.expiresAt)}` : ""}
                             </p>
                           </div>
 
-                          {cred.status === "OFFERED" && (
-                            <button
-                              type="button"
-                              onClick={() => handleAccept(cred.id)}
-                              disabled={acceptingId === cred.id}
-                              className="btn-primary px-3 py-1.5 text-xs shrink-0"
-                              aria-label={`Accept credential ${cred.credentialType}`}
-                            >
-                              {acceptingId === cred.id ? (
-                                <span className="flex items-center gap-1.5">
-                                  <Spinner />
-                                  Accepting…
-                                </span>
-                              ) : (
-                                "Accept"
-                              )}
-                            </button>
-                          )}
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            {cred.status === "OFFERED" && (
+                              <button
+                                type="button"
+                                onClick={() => handleAccept(cred.id)}
+                                disabled={acceptingId === cred.id}
+                                className="btn-primary px-3 py-1.5 text-xs"
+                                aria-label={`Accept credential ${cred.credentialType}`}
+                              >
+                                {acceptingId === cred.id ? (
+                                  <span className="flex items-center gap-1.5">
+                                    <Spinner />
+                                    Accepting&hellip;
+                                  </span>
+                                ) : (
+                                  "Accept"
+                                )}
+                              </button>
+                            )}
+                            {cred.status === "ACTIVE" && (
+                              <button
+                                type="button"
+                                onClick={() => handleVerify(cred.id)}
+                                disabled={verifyingId === cred.id}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-600 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label={`Verify credential ${cred.credentialType}`}
+                              >
+                                {verifyingId === cred.id ? (
+                                  <>
+                                    <Spinner />
+                                    Verifying&hellip;
+                                  </>
+                                ) : verifyResults[cred.id] ? (
+                                  "Hide result"
+                                ) : (
+                                  "Verify"
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Inline verification result */}
+                        {verifyResults[cred.id] && (
+                          <VerificationPanel
+                            result={verifyResults[cred.id]}
+                            onClose={() =>
+                              setVerifyResults((prev) => {
+                                const next = { ...prev };
+                                delete next[cred.id];
+                                return next;
+                              })
+                            }
+                          />
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -390,9 +545,17 @@ export default function WalletPage() {
               <div className="space-y-4">
                 {/* DID info card */}
                 <div className="card">
-                  <h2 className="text-base font-semibold text-gray-900 mb-4">
-                    Decentralised Identifiers
-                  </h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-base font-semibold text-gray-900">
+                      Decentralised Identifiers
+                    </h2>
+                    <Link
+                      href="/wallet/dids"
+                      className="text-xs font-medium text-primary-500 hover:text-primary-600 no-underline"
+                    >
+                      Manage
+                    </Link>
+                  </div>
                   {dids.length === 0 ? (
                     <p className="text-sm text-gray-500">No DIDs registered yet.</p>
                   ) : (
@@ -410,7 +573,7 @@ export default function WalletPage() {
                               {truncateDid(d.did, 24)}
                             </p>
                             <p className="text-xs text-gray-400">
-                              {d.method.toUpperCase()} · {d.status}
+                              {d.method.toUpperCase()} &middot; {d.status}
                             </p>
                           </div>
                         </li>
@@ -436,16 +599,22 @@ export default function WalletPage() {
                       <span className="text-sm font-medium">All Credentials</span>
                     </Link>
                     <Link
-                      href="/wallet/sharing"
+                      href="/wallet/dids"
                       className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors no-underline text-gray-700 hover:text-gray-900"
                     >
                       <svg className="w-4 h-4 text-primary-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Zm6-10.125a1.875 1.875 0 1 1-3.75 0 1.875 1.875 0 0 1 3.75 0Zm1.294 6.336a6.721 6.721 0 0 1-3.17.789 6.721 6.721 0 0 1-3.168-.789 3.376 3.376 0 0 1 6.338 0Z" />
                       </svg>
-                      <span className="text-sm font-medium">Sharing</span>
-                      <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
-                        Soon
-                      </span>
+                      <span className="text-sm font-medium">Manage DIDs</span>
+                    </Link>
+                    <Link
+                      href="/wallet/security"
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors no-underline text-gray-700 hover:text-gray-900"
+                    >
+                      <svg className="w-4 h-4 text-primary-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                      </svg>
+                      <span className="text-sm font-medium">Security &amp; Passkeys</span>
                     </Link>
                   </nav>
                 </div>

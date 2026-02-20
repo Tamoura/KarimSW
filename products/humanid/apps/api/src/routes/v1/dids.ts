@@ -2,17 +2,25 @@
  * DID Routes - /api/v1/dids
  *
  * CRUD operations for Decentralized Identifiers (W3C DID spec).
- * Generates Ed25519 key pairs, creates did:humanid identifiers,
- * and manages DID documents with versioning.
+ * Generates real Ed25519 key pairs, creates did:humanid identifiers
+ * with base58btc encoding, and manages DID documents with versioning.
  *
+ * Private keys are encrypted at rest using AES-256-GCM.
  * All endpoints require JWT authentication.
  */
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { randomBytes, createHash } from 'crypto';
+import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
+import {
+  generateEd25519KeyPair,
+  buildDidFromPublicKey,
+  buildDidDocument,
+  base58Encode,
+  serializeKeyPair,
+} from '../../utils/did-crypto.js';
 
 // ==================== Zod Schemas ====================
 
@@ -20,50 +28,26 @@ const updateDidSchema = z.object({
   status: z.enum(['ACTIVE', 'SUSPENDED']),
 });
 
-// ==================== Helpers ====================
+// ==================== Private Key Encryption ====================
 
-/**
- * Generate a base58-encoded key pair simulation.
- * In production this would use Ed25519 via libsodium or noble-ed25519.
- * For H1 foundation, we generate random bytes as placeholders.
- */
-function generateKeyPair() {
-  const privateKeyBytes = randomBytes(32);
-  const publicKeyBytes = randomBytes(32);
-  return {
-    publicKey: publicKeyBytes.toString('base64url'),
-    privateKey: privateKeyBytes.toString('base64url'),
-  };
+function getEncryptionKey(): Buffer {
+  const key = process.env.CLAIMS_ENCRYPTION_KEY;
+  if (!key) {
+    throw new Error('CLAIMS_ENCRYPTION_KEY is required for private key encryption');
+  }
+  return Buffer.from(key, 'hex');
 }
 
-/**
- * Build a did:humanid identifier from a public key.
- */
-function buildDid(publicKey: string): string {
-  return `did:humanid:${publicKey}`;
-}
-
-/**
- * Build a minimal W3C DID Document.
- */
-function buildDidDocument(did: string, publicKey: string) {
-  return {
-    '@context': [
-      'https://www.w3.org/ns/did/v1',
-      'https://w3id.org/security/suites/ed2519-2020/v1',
-    ],
-    id: did,
-    verificationMethod: [
-      {
-        id: `${did}#key-1`,
-        type: 'Ed25519VerificationKey2020',
-        controller: did,
-        publicKeyMultibase: `z${publicKey}`,
-      },
-    ],
-    authentication: [`${did}#key-1`],
-    assertionMethod: [`${did}#key-1`],
-  };
+function encryptPrivateKey(privateKeyHex: string): string {
+  const key = getEncryptionKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(privateKeyHex, 'utf8'),
+    cipher.final(),
+  ]);
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
 }
 
 // ==================== Routes ====================
@@ -74,19 +58,27 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
 
-      const { publicKey } = generateKeyPair();
-      const did = buildDid(publicKey);
-      const document = buildDidDocument(did, publicKey);
+      // Generate real Ed25519 key pair
+      const keyPair = generateEd25519KeyPair();
+      const serialized = serializeKeyPair(keyPair);
+
+      // Build DID and document
+      const did = buildDidFromPublicKey(keyPair.publicKey);
+      const document = buildDidDocument(did, keyPair.publicKey);
       const documentHash = createHash('sha256')
         .update(JSON.stringify(document))
         .digest('hex');
+
+      // Encrypt private key for storage
+      const encryptedPrivateKey = encryptPrivateKey(serialized.privateKeyHex);
 
       const didRecord = await fastify.prisma.dID.create({
         data: {
           userId: request.currentUser!.id,
           did,
           method: 'humanid',
-          publicKey,
+          publicKey: serialized.publicKeyBase58,
+          encryptedPrivateKey,
           status: 'ACTIVE',
         },
       });
@@ -101,7 +93,7 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      logger.info('DID created', { userId: request.currentUser!.id, did });
+      logger.info('DID created with Ed25519 key pair', { userId: request.currentUser!.id, did });
 
       return reply.code(201).send({
         id: didRecord.id,
@@ -203,7 +195,6 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params as { id: string };
       const body = updateDidSchema.parse(request.body);
 
-      // Only allow updating own DIDs
       const existing = await fastify.prisma.dID.findFirst({
         where: { id, userId: request.currentUser!.id },
       });
