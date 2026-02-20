@@ -243,6 +243,16 @@ export async function buildApp(): Promise<FastifyInstance> {
     });
   });
 
+  // 9b. Readiness probe (lightweight DB check for k8s/load balancers)
+  fastify.get('/ready', async (_request, reply) => {
+    try {
+      await fastify.prisma.$queryRaw`SELECT 1`;
+      return reply.send({ status: 'ready' });
+    } catch {
+      return reply.code(503).send({ status: 'not-ready' });
+    }
+  });
+
   // Register API routes under /api/v1 prefix
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' });
   await fastify.register(didRoutes, { prefix: '/api/v1/dids' });
