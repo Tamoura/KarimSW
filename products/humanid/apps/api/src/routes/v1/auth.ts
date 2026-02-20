@@ -4,8 +4,12 @@
  * Provides user registration, login, token refresh, logout,
  * and email verification endpoints.
  *
- * - Register and login are fully implemented with bcrypt + JWT.
- * - Refresh, logout, and verify-email return "Not implemented" stubs.
+ * All endpoints are fully implemented:
+ * - Register: creates user + session, returns JWT pair
+ * - Login: authenticates, creates session, returns JWT pair
+ * - Refresh: rotates refresh token (old token invalidated)
+ * - Logout: deletes session (single or all)
+ * - Verify-email: validates token from Redis, sets emailVerified=true
  */
 
 import { FastifyPluginAsync } from 'fastify';
@@ -32,6 +36,19 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(1, 'Password is required'),
+});
+
+const refreshSchema = z.object({
+  refresh_token: z.string().min(1, 'Refresh token is required'),
+});
+
+const logoutSchema = z.object({
+  refresh_token: z.string().optional(),
+  all: z.boolean().optional().default(false),
+});
+
+const verifyEmailSchema = z.object({
+  token: z.string().min(1, 'Verification token is required'),
 });
 
 // ==================== Routes ====================
@@ -194,33 +211,172 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/auth/refresh
-  fastify.post('/refresh', async (_request, reply) => {
-    return reply.code(501).send({
-      type: 'https://humanid.dev/errors/not-implemented',
-      title: 'Not Implemented',
-      status: 501,
-      detail: 'Token refresh is not yet implemented',
-    });
+  // Implements refresh-token rotation: old token is invalidated, new pair issued.
+  fastify.post('/refresh', async (request, reply) => {
+    try {
+      const body = refreshSchema.parse(request.body);
+
+      // Hash the provided refresh token to find the session
+      const tokenHash = createHash('sha256').update(body.refresh_token).digest('hex');
+
+      const session = await fastify.prisma.session.findUnique({
+        where: { tokenHash },
+        include: { user: true },
+      });
+
+      if (!session) {
+        throw new AppError(401, 'unauthorized', 'Invalid refresh token');
+      }
+
+      // Check if session has expired
+      if (session.expiresAt < new Date()) {
+        // Clean up expired session
+        await fastify.prisma.session.delete({ where: { id: session.id } });
+        throw new AppError(401, 'unauthorized', 'Refresh token has expired');
+      }
+
+      // Check user status
+      if (session.user.status !== 'ACTIVE') {
+        throw new AppError(403, 'account-suspended', 'Account is suspended or deactivated');
+      }
+
+      // Delete old session (rotation: old token can never be reused)
+      await fastify.prisma.session.delete({ where: { id: session.id } });
+
+      // Issue new token pair
+      const newAccessToken = fastify.jwt.sign(
+        { userId: session.user.id, role: session.user.role, jti: randomUUID() },
+        { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+      );
+
+      const newRefreshToken = fastify.jwt.sign(
+        { userId: session.user.id, type: 'refresh', jti: randomUUID() },
+        { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d' }
+      );
+
+      // Create new session
+      const newTokenHash = createHash('sha256').update(newRefreshToken).digest('hex');
+      const expiresIn = 7 * 24 * 60 * 60 * 1000; // 7 days
+      await fastify.prisma.session.create({
+        data: {
+          userId: session.user.id,
+          tokenHash: newTokenHash,
+          deviceInfo: (request.headers['user-agent'] as string) || session.deviceInfo,
+          ipAddress: request.ip || session.ipAddress,
+          expiresAt: new Date(Date.now() + expiresIn),
+        },
+      });
+
+      logger.info('Token refreshed', { userId: session.user.id });
+
+      return reply.send({
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({
+          type: 'https://humanid.dev/errors/validation-error',
+          title: 'Validation Error',
+          status: 400,
+          detail: error.errors.map(e => e.message).join('; '),
+          request_id: request.id,
+        });
+      }
+      throw error;
+    }
   });
 
   // DELETE /api/v1/auth/logout
-  fastify.delete('/logout', async (_request, reply) => {
-    return reply.code(501).send({
-      type: 'https://humanid.dev/errors/not-implemented',
-      title: 'Not Implemented',
-      status: 501,
-      detail: 'Logout is not yet implemented',
-    });
+  // Requires Bearer token auth. Deletes session (single or all).
+  fastify.delete('/logout', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+
+      const body = logoutSchema.parse(request.body || {});
+
+      if (body.all) {
+        // Delete ALL sessions for this user
+        await fastify.prisma.session.deleteMany({
+          where: { userId: request.currentUser!.id },
+        });
+        logger.info('All sessions cleared', { userId: request.currentUser!.id });
+      } else if (body.refresh_token) {
+        // Delete the specific session matching this refresh token
+        const tokenHash = createHash('sha256').update(body.refresh_token).digest('hex');
+        await fastify.prisma.session.deleteMany({
+          where: { tokenHash },
+        });
+        logger.info('Session deleted', { userId: request.currentUser!.id });
+      } else {
+        // No refresh token and not all - delete all sessions as fallback
+        await fastify.prisma.session.deleteMany({
+          where: { userId: request.currentUser!.id },
+        });
+      }
+
+      return reply.code(204).send();
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
   });
 
   // POST /api/v1/auth/verify-email
-  fastify.post('/verify-email', async (_request, reply) => {
-    return reply.code(501).send({
-      type: 'https://humanid.dev/errors/not-implemented',
-      title: 'Not Implemented',
-      status: 501,
-      detail: 'Email verification is not yet implemented',
-    });
+  // Validates a token stored in Redis, sets user's emailVerified flag.
+  fastify.post('/verify-email', async (request, reply) => {
+    try {
+      const body = verifyEmailSchema.parse(request.body);
+
+      // Hash the verification token to look up in Redis
+      const tokenHash = createHash('sha256').update(body.token).digest('hex');
+
+      if (!fastify.redis) {
+        throw new AppError(500, 'service-unavailable', 'Email verification service is unavailable');
+      }
+
+      // Look up token in Redis
+      const userId = await fastify.redis.get(`email-verify:${tokenHash}`);
+
+      if (!userId) {
+        throw new AppError(400, 'invalid-token', 'Invalid or expired verification token');
+      }
+
+      // Delete the token so it can't be reused
+      await fastify.redis.del(`email-verify:${tokenHash}`);
+
+      // Update user's emailVerified flag
+      const user = await fastify.prisma.user.update({
+        where: { id: userId },
+        data: { emailVerified: true },
+      });
+
+      logger.info('Email verified', { userId: user.id, email: user.email });
+
+      return reply.send({
+        message: 'Email verified successfully',
+        email: user.email,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({
+          type: 'https://humanid.dev/errors/validation-error',
+          title: 'Validation Error',
+          status: 400,
+          detail: error.errors.map(e => e.message).join('; '),
+          request_id: request.id,
+        });
+      }
+      throw error;
+    }
   });
 };
 
