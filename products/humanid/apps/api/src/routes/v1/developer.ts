@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { generateApiKey, hashApiKey, getApiKeyPrefix } from '../../utils/crypto.js';
+import { createHash, randomBytes, createCipheriv } from 'crypto';
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
@@ -244,6 +245,192 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
         activeKeys,
         revokedKeys: totalKeys - activeKeys,
         totalRequests,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+  // ==================== Sandbox ====================
+
+  // POST /api/v1/developer/sandbox/seed - Generate test data
+  fastify.post('/sandbox/seed', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
+
+      // Create test DIDs
+      const testDids: { id: string; did: string }[] = [];
+      for (let i = 0; i < 3; i++) {
+        const { generateEd25519KeyPair, buildDidFromPublicKey, buildDidDocument, serializeKeyPair, base58Encode } = await import('../../utils/did-crypto.js');
+        const keyPair = generateEd25519KeyPair();
+        const serialized = serializeKeyPair(keyPair);
+        const did = buildDidFromPublicKey(keyPair.publicKey);
+        const document = buildDidDocument(did, keyPair.publicKey);
+        const documentHash = createHash('sha256').update(JSON.stringify(document)).digest('hex');
+
+        // Encrypt private key
+        const encKey = Buffer.from(process.env.CLAIMS_ENCRYPTION_KEY!, 'hex');
+        const iv = randomBytes(12);
+        const cipher = createCipheriv('aes-256-gcm', encKey, iv);
+        const encrypted = Buffer.concat([cipher.update(serialized.privateKeyHex, 'utf8'), cipher.final()]);
+        const authTag = cipher.getAuthTag();
+        const encryptedPrivateKey = `${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
+
+        const didRecord = await fastify.prisma.dID.create({
+          data: {
+            userId,
+            did,
+            method: 'humanid',
+            publicKey: serialized.publicKeyBase58,
+            encryptedPrivateKey,
+            status: 'ACTIVE',
+          },
+        });
+
+        await fastify.prisma.dIDDocument.create({
+          data: { didId: didRecord.id, version: 1, document, documentHash },
+        });
+
+        testDids.push({ id: didRecord.id, did: didRecord.did });
+      }
+
+      // Create test credentials between the DIDs
+      const testCredentials: { id: string; type: string }[] = [];
+      const credTypes = [
+        { type: 'UniversityDegree', claims: { degree: 'BSc Computer Science', university: 'MIT', year: 2025 } },
+        { type: 'EmploymentCertificate', claims: { employer: 'Acme Corp', role: 'Engineer', startDate: '2025-01-01' } },
+        { type: 'GovernmentID', claims: { idNumber: 'TEST-123456', country: 'US', expiryDate: '2030-01-01' } },
+      ];
+
+      for (const ct of credTypes) {
+        const issuerDidId = testDids[0].id;
+        const holderDidId = testDids[1].id;
+
+        const encKey = Buffer.from(process.env.CLAIMS_ENCRYPTION_KEY!, 'hex');
+        const iv = randomBytes(12);
+        const cipher = createCipheriv('aes-256-gcm', encKey, iv);
+        const plaintext = JSON.stringify(ct.claims);
+        const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+        const authTag = cipher.getAuthTag();
+        const encryptedClaims = `${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted.toString('base64')}`;
+
+        const credentialHash = createHash('sha256').update(plaintext).digest('hex');
+
+        const credential = await fastify.prisma.credential.create({
+          data: {
+            holderDidId,
+            issuerDidId,
+            credentialType: ct.type,
+            encryptedClaims,
+            proof: { type: 'Ed25519Signature2020', sandbox: true },
+            credentialHash,
+            status: 'OFFERED',
+          },
+        });
+
+        testCredentials.push({ id: credential.id, type: ct.type });
+      }
+
+      logger.info('Sandbox seeded', { userId, dids: testDids.length, credentials: testCredentials.length });
+
+      return reply.code(201).send({
+        message: 'Sandbox environment seeded with test data',
+        testDids,
+        testCredentials,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+
+  // GET /api/v1/developer/sandbox/status - Sandbox status
+  fastify.get('/sandbox/status', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
+
+      const didCount = await fastify.prisma.dID.count({ where: { userId } });
+      const credentialCount = await fastify.prisma.credential.count({
+        where: {
+          OR: [
+            { holderDid: { userId } },
+            { issuerDid: { userId } },
+          ],
+        },
+      });
+      const apiKeyCount = await fastify.prisma.apiKey.count({ where: { userId, status: 'ACTIVE' } });
+
+      return reply.send({
+        environment: 'SANDBOX',
+        didCount,
+        credentialCount,
+        apiKeyCount,
+        features: {
+          unlimitedRateLimit: true,
+          testCredentials: true,
+          noBlockchainAnchoring: true,
+        },
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+
+  // ==================== Request Logs ====================
+
+  // GET /api/v1/developer/logs - Request log history
+  fastify.get('/logs', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
+      const query = request.query as { page?: string; limit?: string; action?: string };
+
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
+
+      const where: Record<string, unknown> = { userId };
+      if (query.action) {
+        where.action = { contains: query.action };
+      }
+
+      const [logs, total] = await Promise.all([
+        fastify.prisma.auditLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            action: true,
+            entityType: true,
+            entityId: true,
+            metadata: true,
+            ipAddress: true,
+            createdAt: true,
+          },
+        }),
+        fastify.prisma.auditLog.count({ where }),
+      ]);
+
+      return reply.send({
+        logs: logs.map((l) => ({
+          ...l,
+          createdAt: l.createdAt.toISOString(),
+        })),
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) {
