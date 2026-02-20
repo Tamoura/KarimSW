@@ -1,0 +1,5 @@
+.claude/settings.local.json
+.claude/audit-trail.jsonl
+.DS_Store
+node_modules/
+dist/

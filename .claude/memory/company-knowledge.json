@@ -1,0 +1,422 @@
+{
+  "version": "2.0.0",
+  "updated_at": "2026-01-31T00:00:00Z",
+  "patterns": [
+    {
+      "id": "PATTERN-001",
+      "name": "Vite + React + TypeScript Setup",
+      "category": "frontend",
+      "description": "Standard Vite configuration for React TypeScript projects with proper port configuration",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "task": "FRONTEND-01",
+        "date": "2026-01-25"
+      },
+      "problem": "Need fast development server with TypeScript support",
+      "solution": "Use Vite with React plugin and configure port to 3200+",
+      "code_snippet": "// vite.config.ts\nimport { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  server: {\n    port: 3200,\n  },\n})",
+      "when_to_use": "Any new frontend project without SSR requirements",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-002",
+      "name": "Tailwind CSS Content Paths",
+      "category": "frontend",
+      "description": "Proper Tailwind configuration with content paths for Vite projects",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "task": "FRONTEND-01",
+        "date": "2026-01-25"
+      },
+      "problem": "Tailwind classes not applying - content paths missing",
+      "solution": "Include index.html and all src files in content array",
+      "code_snippet": "// tailwind.config.js\nexport default {\n  content: [\n    \"./index.html\",\n    \"./src/**/*.{js,ts,jsx,tsx}\",\n  ],\n  theme: { extend: {} },\n  plugins: [],\n}",
+      "when_to_use": "Every Vite + Tailwind project",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-003",
+      "name": "Vitest Configuration for React",
+      "category": "frontend",
+      "description": "Vitest setup with jsdom environment and proper exclusions",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "task": "QA-01",
+        "date": "2026-01-25"
+      },
+      "problem": "Need fast unit tests for React components",
+      "solution": "Use Vitest with jsdom, exclude e2e tests from unit test runs",
+      "code_snippet": "// vitest.config.ts\nimport { defineConfig } from 'vitest/config'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  test: {\n    globals: true,\n    environment: 'jsdom',\n    setupFiles: './src/test/setup.ts',\n    exclude: [\n      '**/node_modules/**',\n      '**/e2e/**',\n      '**/*.spec.ts',\n    ],\n  },\n})",
+      "when_to_use": "React projects using Vite and Vitest",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-004",
+      "name": "Playwright E2E Configuration",
+      "category": "testing",
+      "description": "Playwright config with web server auto-start and proper timeouts",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "task": "QA-01",
+        "date": "2026-01-25"
+      },
+      "problem": "E2E tests need running dev server",
+      "solution": "Configure webServer in playwright.config.ts to auto-start dev server",
+      "code_snippet": "// playwright.config.ts\nimport { defineConfig, devices } from '@playwright/test';\n\nexport default defineConfig({\n  testDir: './e2e',\n  fullyParallel: true,\n  use: {\n    baseURL: 'http://localhost:3200',\n    trace: 'on-first-retry',\n  },\n  webServer: {\n    command: 'npm run dev',\n    url: 'http://localhost:3200',\n    reuseExistingServer: !process.env.CI,\n    timeout: 120000,\n  },\n});",
+      "when_to_use": "Any E2E test setup with Playwright",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-005",
+      "name": "Custom Hook Pattern for Business Logic",
+      "category": "frontend",
+      "description": "Encapsulate business logic in custom hooks with loading/error states",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "task": "FRONTEND-02",
+        "date": "2026-01-25"
+      },
+      "problem": "Business logic mixed with component rendering",
+      "solution": "Extract to custom hook with results, isLoading, error states",
+      "code_snippet": "// hooks/useCalculator.ts\nexport function useCalculator() {\n  const [results, setResults] = useState(null);\n  const [isCalculating, setIsCalculating] = useState(false);\n  const [error, setError] = useState<string | null>(null);\n\n  const calculate = useCallback((config) => {\n    setIsCalculating(true);\n    setError(null);\n    try {\n      const result = doCalculation(config);\n      setResults(result);\n    } catch (err) {\n      setError(err.message);\n    } finally {\n      setIsCalculating(false);\n    }\n  }, []);\n\n  return { results, isCalculating, error, calculate };\n}",
+      "when_to_use": "Any complex business logic in React apps",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-006",
+      "name": "Calculation Module Separation",
+      "category": "frontend",
+      "description": "Keep pure calculation functions separate from React components",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "task": "FRONTEND-02",
+        "date": "2026-01-25"
+      },
+      "problem": "Hard to test calculations when mixed with UI",
+      "solution": "Create src/calculators/ directory with pure functions, test independently",
+      "code_snippet": "// calculators/trainingCalculator.ts\nexport function calculateTrainingCost(config: TrainingConfig): CalculationResult {\n  const flops = 6 * config.modelParams * config.datasetTokens * config.epochs;\n  const hours = flops / (config.gpuFlops * config.efficiency * config.gpuCount);\n  return { hours, cost: hours * config.hourlyRate };\n}\n\n// Can be tested without React\nimport { calculateTrainingCost } from './trainingCalculator';\ntest('calculates cost correctly', () => {\n  expect(calculateTrainingCost({...})).toEqual({...});\n});",
+      "when_to_use": "Any app with non-trivial business logic",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-007",
+      "name": "Type Guards for Runtime Validation",
+      "category": "typescript",
+      "description": "Use type guards to validate data at runtime boundaries",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "task": "FRONTEND-02",
+        "date": "2026-01-25"
+      },
+      "problem": "TypeScript types only exist at compile time",
+      "solution": "Create type guards in types/guards.ts for runtime checking",
+      "code_snippet": "// types/guards.ts\nexport function isTrainingConfig(obj: unknown): obj is TrainingConfig {\n  return (\n    typeof obj === 'object' &&\n    obj !== null &&\n    'modelSizeB' in obj &&\n    'datasetSizeGb' in obj &&\n    'epochs' in obj\n  );\n}",
+      "when_to_use": "When validating external data or user input",
+      "confidence": "medium",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-008",
+      "name": "Component Folder Structure",
+      "category": "frontend",
+      "description": "Organize components by feature/purpose",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "task": "FRONTEND-01",
+        "date": "2026-01-25"
+      },
+      "problem": "Flat component structure becomes unmanageable",
+      "solution": "Group by purpose: layout/, forms/, results/, common/",
+      "code_snippet": "src/components/\n├── common/        # Reusable UI components\n│   ├── Tabs.tsx\n│   └── ComingSoon.tsx\n├── forms/         # Input forms\n│   └── TrainingForm.tsx\n├── layout/        # Page structure\n│   ├── Header.tsx\n│   ├── Footer.tsx\n│   └── Layout.tsx\n└── results/       # Output displays\n    ├── ComparisonGrid.tsx\n    └── ProviderCard.tsx",
+      "when_to_use": "Any React project with more than 5 components",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-009",
+      "name": "Fastify Plugin Registration Order",
+      "category": "backend",
+      "description": "Register Fastify plugins in dependency order: observability first, then data (Prisma/Redis), then auth, then rate limiting, then routes",
+      "learned_from": {
+        "product": "stablecoin-gateway",
+        "task": "BACKEND-01",
+        "date": "2026-01-28"
+      },
+      "problem": "Plugin registration order matters for dependency resolution",
+      "solution": "Register observability -> prisma -> redis -> rateLimit -> auth -> routes. Use fastify-plugin with name and dependencies declared.",
+      "code_snippet": "// app.ts\nawait fastify.register(observabilityPlugin);\nawait fastify.register(prismaPlugin);\nawait fastify.register(redisPlugin);\nawait fastify.register(rateLimit, rateLimitConfig);\nawait fastify.register(authPlugin);\n// Then routes:\nawait fastify.register(paymentSessionRoutes, { prefix: '/v1/payment-sessions' });",
+      "when_to_use": "Every Fastify API project",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-010",
+      "name": "Prisma Service Layer",
+      "category": "backend",
+      "description": "Encapsulate Prisma operations in service classes that accept PrismaClient in constructor. Services own business logic, routes format responses.",
+      "learned_from": {
+        "product": "stablecoin-gateway",
+        "task": "BACKEND-02",
+        "date": "2026-01-28"
+      },
+      "problem": "Business logic mixed with route handlers",
+      "solution": "Create service classes per domain (PaymentService, RefundService). Constructor takes PrismaClient. Services return domain objects, routes format HTTP responses.",
+      "code_snippet": "export class PaymentService {\n  constructor(private prisma: PrismaClient) {}\n\n  async createPaymentSession(userId: string, data: CreateRequest): Promise<PaymentSession> {\n    return this.prisma.paymentSession.create({ data: { userId, ...data } });\n  }\n}",
+      "when_to_use": "Any backend with Prisma ORM",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-011",
+      "name": "Integration Tests with buildApp()",
+      "category": "testing",
+      "description": "Use buildApp() to create real Fastify instance with real database. Test via app.inject(). No mocks.",
+      "learned_from": {
+        "product": "stablecoin-gateway",
+        "task": "QA-01",
+        "date": "2026-01-28"
+      },
+      "problem": "Need reliable integration tests that test real behavior",
+      "solution": "Create app in beforeAll(), close in afterAll(). Use app.inject() for HTTP calls. Access app.prisma for direct DB manipulation in test setup.",
+      "code_snippet": "let app: FastifyInstance;\nlet token: string;\n\nbeforeAll(async () => {\n  app = await buildApp();\n  const res = await app.inject({ method: 'POST', url: '/v1/auth/signup', payload: { email: 'test@test.com', password: 'Pass123!' } });\n  token = res.json().access_token;\n});\n\nafterAll(async () => { await app.close(); });\n\nit('creates resource', async () => {\n  const res = await app.inject({ method: 'POST', url: '/v1/resource', headers: { authorization: `Bearer ${token}` }, payload: { ... } });\n  expect(res.statusCode).toBe(201);\n});",
+      "when_to_use": "All Fastify API integration tests",
+      "confidence": "high",
+      "times_applied": 5,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-012",
+      "name": "Dual Auth: JWT + API Keys",
+      "category": "security",
+      "description": "Support both JWT tokens (user sessions) and API keys (programmatic access) in a single auth plugin",
+      "learned_from": {
+        "product": "stablecoin-gateway",
+        "task": "BACKEND-03",
+        "date": "2026-01-28"
+      },
+      "problem": "Need both interactive and programmatic authentication",
+      "solution": "Auth plugin tries JWT first, falls back to API key lookup. API keys are hashed for secure storage. Permission checks via decorators.",
+      "code_snippet": "fastify.decorate('authenticate', async (request) => {\n  const token = request.headers.authorization?.substring(7);\n  try { await request.jwtVerify(); return; } catch {}\n  const keyHash = hashApiKey(token);\n  const apiKey = await fastify.prisma.apiKey.findUnique({ where: { keyHash } });\n  if (!apiKey) throw new AppError(401, 'unauthorized', 'Invalid credentials');\n  request.currentUser = apiKey.user;\n});",
+      "when_to_use": "APIs that serve both web users and API consumers",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-013",
+      "name": "AppError with RFC 7807 Problem Details",
+      "category": "backend",
+      "description": "Custom error class with HTTP status, error code, and RFC 7807 formatted JSON response",
+      "learned_from": {
+        "product": "stablecoin-gateway",
+        "task": "BACKEND-01",
+        "date": "2026-01-28"
+      },
+      "problem": "Inconsistent error responses across endpoints",
+      "solution": "AppError class with statusCode, code, message. toJSON() returns RFC 7807 format. Global error handler catches AppError and Zod errors separately.",
+      "code_snippet": "export class AppError extends Error {\n  constructor(public statusCode: number, public code: string, message: string) {\n    super(message);\n  }\n  toJSON() {\n    return { type: `https://api.example.com/errors/${this.code}`, title: this.code, status: this.statusCode, detail: this.message };\n  }\n}\n// Usage: throw new AppError(404, 'not-found', 'Resource not found');",
+      "when_to_use": "Every API project",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-014",
+      "name": "Webhook Queue with Idempotency",
+      "category": "backend",
+      "description": "Queue webhooks asynchronously with database-level idempotency via composite unique constraints",
+      "learned_from": {
+        "product": "stablecoin-gateway",
+        "task": "BACKEND-05",
+        "date": "2026-01-29"
+      },
+      "problem": "Duplicate webhook deliveries on retry or concurrent requests",
+      "solution": "Use composite unique constraint (endpointId + eventType + resourceId). Catch Prisma P2002 errors as idempotency signals. Queue with status tracking and exponential backoff.",
+      "code_snippet": "try {\n  await prisma.webhookDelivery.create({ data: { endpointId, eventType, resourceId, payload, status: 'PENDING' } });\n} catch (error: any) {\n  if (error.code === 'P2002') { continue; } // Idempotent: already exists\n  throw error;\n}",
+      "when_to_use": "Any system that delivers webhooks or async events",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-015",
+      "name": "Zod Input Validation with Transforms",
+      "category": "security",
+      "description": "Validate and transform user input at the boundary using Zod schemas",
+      "learned_from": {
+        "product": "stablecoin-gateway",
+        "task": "BACKEND-02",
+        "date": "2026-01-28"
+      },
+      "problem": "Invalid or malformed input reaching business logic",
+      "solution": "Define Zod schemas per endpoint. Use .refine() for custom validation, .transform() for normalization. Validate early in route handlers.",
+      "code_snippet": "const createPaymentSchema = z.object({\n  amount: z.number().min(1).max(10000),\n  merchant_address: z.string()\n    .refine(addr => addr.startsWith('0x'), 'Must start with 0x')\n    .refine(addr => isAddress(addr), 'Invalid address')\n    .transform(addr => getAddress(addr)), // Normalize\n});\n\nconst validated = createPaymentSchema.parse(request.body);",
+      "when_to_use": "All API endpoints that accept user input",
+      "confidence": "high",
+      "times_applied": 3,
+      "success_rate": 1.0
+    },
+    {
+      "id": "PATTERN-016",
+      "name": "Structured Logging with Correlation",
+      "category": "backend",
+      "description": "JSON logging in production with request IDs for correlation, human-readable in development",
+      "learned_from": {
+        "product": "stablecoin-gateway",
+        "task": "BACKEND-01",
+        "date": "2026-01-28"
+      },
+      "problem": "Hard to trace requests across log entries",
+      "solution": "Logger class outputs JSON in production, readable text in dev. Include request_id, user_id, method, url, status, duration_ms in every log entry.",
+      "code_snippet": "// Observability plugin hook\nfastify.addHook('onResponse', async (request, reply) => {\n  const duration = Date.now() - request.startTime;\n  logger.info('Request completed', {\n    request_id: request.id, method: request.method, url: request.url,\n    status: reply.statusCode, duration_ms: duration, user_id: request.currentUser?.id\n  });\n});",
+      "when_to_use": "Every backend service",
+      "confidence": "high",
+      "times_applied": 1,
+      "success_rate": 1.0
+    }
+  ],
+  "anti_patterns": [
+    {
+      "id": "ANTI-001",
+      "name": "Using Mocks in E2E Tests",
+      "category": "testing",
+      "description": "DO NOT mock database or API calls in E2E tests",
+      "learned_from": {
+        "product": "company-policy",
+        "date": "2026-01-10"
+      },
+      "problem": "E2E tests passed but production had bugs",
+      "why_its_bad": "Mocks hide integration issues, give false confidence",
+      "correct_approach": "Use real database with seeded test data, real API calls",
+      "times_encountered": 0
+    },
+    {
+      "id": "ANTI-002",
+      "name": "Global State for Simple Apps",
+      "category": "frontend",
+      "description": "Don't use Redux/Zustand for apps with simple state needs",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "date": "2026-01-25"
+      },
+      "problem": "Unnecessary complexity and bundle size",
+      "why_its_bad": "Overkill for single-page apps, increases learning curve",
+      "correct_approach": "Use React useState + custom hooks, add global state only when needed",
+      "times_encountered": 0
+    },
+    {
+      "id": "ANTI-003",
+      "name": "Mixing Business Logic with Components",
+      "category": "frontend",
+      "description": "Don't put calculation logic directly in React components",
+      "learned_from": {
+        "product": "gpu-calculator",
+        "date": "2026-01-25"
+      },
+      "problem": "Hard to test, hard to reuse, components become bloated",
+      "why_its_bad": "Violates single responsibility, makes testing difficult",
+      "correct_approach": "Extract to pure functions in calculators/ directory",
+      "times_encountered": 0
+    }
+  ],
+  "tech_stack_decisions": [
+    {
+      "decision": "Use PostgreSQL as default database",
+      "rationale": "ACID compliance, proven at scale, excellent Prisma support",
+      "alternatives_considered": ["MongoDB", "MySQL"],
+      "date": "2026-01-10",
+      "applies_to": "All products with data persistence"
+    },
+    {
+      "decision": "Use Playwright for E2E testing",
+      "rationale": "Cross-browser support, excellent developer experience, auto-wait",
+      "alternatives_considered": ["Cypress", "Selenium"],
+      "date": "2026-01-10",
+      "applies_to": "All frontend testing"
+    },
+    {
+      "decision": "Use Fastify for backend APIs",
+      "rationale": "Fast, TypeScript-first, plugin ecosystem",
+      "alternatives_considered": ["Express", "NestJS"],
+      "date": "2026-01-10",
+      "applies_to": "All backend services"
+    },
+    {
+      "decision": "Use Vite for client-side apps without SSR",
+      "rationale": "Fast dev server, simple config, excellent TypeScript support",
+      "alternatives_considered": ["Next.js", "Create React App"],
+      "date": "2026-01-25",
+      "applies_to": "Client-side only applications (no SSR needed)",
+      "example": "gpu-calculator uses Vite + React"
+    },
+    {
+      "decision": "Use Next.js 14+ for apps requiring SSR/SSG",
+      "rationale": "React framework with SSR, excellent DX, App Router",
+      "alternatives_considered": ["Vite + React", "Remix"],
+      "date": "2026-01-10",
+      "applies_to": "Web apps needing SEO, SSR, or complex routing"
+    },
+    {
+      "decision": "Use Vitest for unit testing React apps",
+      "rationale": "Fast, Vite-compatible, Jest-compatible API",
+      "alternatives_considered": ["Jest"],
+      "date": "2026-01-25",
+      "applies_to": "Vite-based projects"
+    },
+    {
+      "decision": "Use shadcn/ui for component library",
+      "rationale": "Copy-paste components, fully customizable, accessible",
+      "alternatives_considered": ["Material UI", "Chakra UI", "Radix UI directly"],
+      "date": "2026-01-25",
+      "applies_to": "All React projects"
+    }
+  ],
+  "common_gotchas": [
+    {
+      "issue": "Port conflicts in development",
+      "solution": "Use ports 3200+ for frontend apps (configured in company standards)",
+      "category": "configuration"
+    },
+    {
+      "issue": "Prisma migrations fail in CI",
+      "solution": "Always run 'prisma generate' before 'prisma migrate'",
+      "category": "backend"
+    },
+    {
+      "issue": "Tailwind classes not applying",
+      "solution": "Check content array in tailwind.config.js includes all component paths",
+      "category": "frontend"
+    },
+    {
+      "issue": "E2E tests timeout on first run",
+      "solution": "Set webServer.timeout to 120000ms in playwright.config.ts",
+      "category": "testing"
+    },
+    {
+      "issue": "Vitest runs E2E tests by mistake",
+      "solution": "Exclude e2e/ directory in vitest.config.ts exclude array",
+      "category": "testing"
+    },
+    {
+      "issue": "React component tests fail with 'document is not defined'",
+      "solution": "Set environment: 'jsdom' in vitest.config.ts",
+      "category": "testing"
+    }
+  ]
+}
