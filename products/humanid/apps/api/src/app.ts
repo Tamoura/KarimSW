@@ -22,6 +22,7 @@ import authPlugin from './plugins/auth.js';
 
 // Routes
 import authRoutes from './routes/v1/auth.js';
+import didRoutes from './routes/v1/dids.js';
 
 // Utils
 import { logger } from './utils/logger.js';
@@ -218,6 +219,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Register API routes under /api/v1 prefix
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' });
+  await fastify.register(didRoutes, { prefix: '/api/v1/dids' });
 
   // Validate :id path parameters
   const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
