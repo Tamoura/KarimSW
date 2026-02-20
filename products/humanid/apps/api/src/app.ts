@@ -33,6 +33,9 @@ import developerRoutes from './routes/v1/developer.js';
 import organizationRoutes from './routes/v1/organizations.js';
 import webhookRoutes from './routes/v1/webhooks.js';
 import auditRoutes from './routes/v1/audit.js';
+import ssoRoutes from './routes/v1/sso.js';
+import eidasRoutes from './routes/v1/eidas.js';
+import marketplaceRoutes from './routes/v1/marketplace.js';
 
 // Utils
 import { logger } from './utils/logger.js';
@@ -240,6 +243,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(organizationRoutes, { prefix: '/api/v1/orgs' });
   await fastify.register(webhookRoutes, { prefix: '/api/v1/webhooks' });
   await fastify.register(auditRoutes, { prefix: '/api/v1/audit' });
+  await fastify.register(ssoRoutes, { prefix: '/api/v1/sso' });
+  await fastify.register(eidasRoutes, { prefix: '/api/v1/eidas' });
+  await fastify.register(marketplaceRoutes, { prefix: '/api/v1' });
 
   // OpenAPI spec endpoint
   fastify.get('/api/v1/openapi.json', async (_request, reply) => {
