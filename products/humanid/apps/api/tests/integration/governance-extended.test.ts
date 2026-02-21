@@ -438,6 +438,7 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       const res = await app.inject({
         method: 'GET',
         url: `/api/v1/governance/proposals/${fakeId}/results`,
+        headers: { authorization: `Bearer ${devToken}` },
       });
       expect(res.statusCode).toBe(404);
       const body = res.json();
@@ -448,6 +449,7 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       const res = await app.inject({
         method: 'GET',
         url: `/api/v1/governance/proposals/${activeProposalId}/results`,
+        headers: { authorization: `Bearer ${devToken}` },
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();
@@ -470,6 +472,7 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/governance/params',
+        headers: { authorization: `Bearer ${devToken}` },
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();

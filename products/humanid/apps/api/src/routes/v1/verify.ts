@@ -25,7 +25,7 @@ const verifyCredentialSchema = z.object({
 });
 
 const createRequestSchema = z.object({
-  holderDid: z.string().min(1, 'Holder DID is required'),
+  holderDid: z.string().min(1, 'Holder DID is required').regex(/^did:[a-z]+:.+$/, 'Invalid DID format (expected did:method:identifier)'),
   requestedAttributes: z.array(z.string().min(1).max(100)).min(1, 'At least one attribute is required').max(50, 'Maximum 50 attributes allowed'),
   expiresInHours: z.number().min(1).max(720).optional().default(24),
 });
@@ -115,10 +115,10 @@ const verifyRoutes: FastifyPluginAsync = async (fastify) => {
                     : 'Ed25519 signature invalid — credential may be forged',
                 };
               } else {
-                // Cannot reconstruct exact bytes (older credential) — fall back to structural check
+                // Cannot reconstruct exact signed bytes — signature cannot be verified
                 checks.signature = {
-                  passed: true,
-                  detail: 'Ed25519Signature2020 verified — hash integrity confirmed (structural)',
+                  passed: false,
+                  detail: 'Cannot verify signature — signed data hash mismatch',
                 };
               }
             }

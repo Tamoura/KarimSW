@@ -165,6 +165,7 @@ const governanceRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/governance/proposals/:id/results - Proposal results
   fastify.get('/proposals/:id/results', async (request, reply) => {
     try {
+      await fastify.authenticate(request);
       const { id } = request.params as { id: string };
 
       const proposal = await fastify.prisma.governanceProposal.findUnique({
@@ -195,7 +196,8 @@ const governanceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/v1/governance/params - Governance parameters
-  fastify.get('/params', async (_request, reply) => {
+  fastify.get('/params', async (request, reply) => {
+    await fastify.authenticate(request);
     return reply.send({
       defaultQuorum: 100,
       minVotingDuration: 24,

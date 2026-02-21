@@ -18,6 +18,9 @@ export function getEncryptionKey(): Buffer {
   if (!key) {
     throw new Error('CLAIMS_ENCRYPTION_KEY is required');
   }
+  if (key.length !== 64) {
+    throw new Error('CLAIMS_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes for AES-256)');
+  }
   return Buffer.from(key, 'hex');
 }
 
@@ -45,7 +48,11 @@ export function encrypt(plaintext: string): string {
  */
 export function decrypt(encryptedStr: string): string {
   const key = getEncryptionKey();
-  const [ivB64, tagB64, dataB64] = encryptedStr.split(':');
+  const parts = encryptedStr.split(':');
+  if (parts.length !== 3) {
+    throw new Error('Invalid encrypted data format: expected iv:authTag:ciphertext');
+  }
+  const [ivB64, tagB64, dataB64] = parts;
 
   const iv = Buffer.from(ivB64, 'base64');
   const authTag = Buffer.from(tagB64, 'base64');
@@ -105,8 +112,17 @@ export function deriveHmacKey(purpose: string, identifier: string): string {
  * Timing-safe comparison of two hex strings.
  */
 export function timingSafeCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+  const bufA = Buffer.from(a, 'hex');
+  const bufB = Buffer.from(b, 'hex');
+  // Pad shorter buffer to equal length to avoid leaking length via timing
+  const maxLen = Math.max(bufA.length, bufB.length);
+  const paddedA = Buffer.alloc(maxLen);
+  const paddedB = Buffer.alloc(maxLen);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
+  // Constant-time comparison, then also check original lengths match
+  const equal = timingSafeEqual(paddedA, paddedB);
+  return equal && bufA.length === bufB.length;
 }
 
 /**

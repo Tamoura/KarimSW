@@ -12,7 +12,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { createHash, randomBytes } from 'crypto';
+import { createHash } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { buildEd25519Proof, deserializePrivateKey } from '../../utils/did-crypto.js';
@@ -98,15 +98,8 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
           signedDataHash: credentialHash,
         };
       } else {
-        // Fallback for DIDs created before H2 (no encrypted private key)
-        proof = {
-          type: 'Ed25519Signature2020',
-          created: issuanceTimestamp,
-          verificationMethod: `${issuerDid.did}#key-1`,
-          proofPurpose: 'assertionMethod',
-          proofValue: randomBytes(64).toString('base64'),
-          legacy: true,
-        };
+        // DID lacks a signing key — reject instead of issuing with fake proof
+        throw new AppError(400, 'signing-failed', 'Issuer DID does not have a signing key. Rotate the DID to add an encrypted private key before issuing credentials.');
       }
 
       const credential = await fastify.prisma.credential.create({
