@@ -67,9 +67,20 @@ jobs:
         working-directory: products/humanid/apps/api
         run: npm ci
 
-      - name: Audit dependencies
+      - name: Audit production dependencies
         working-directory: products/humanid/apps/api
-        run: npm audit --audit-level=high
+        run: |
+          # Audit production deps only at high/critical level.
+          # Dev dep vulns (jest/minimatch chain) have no non-breaking fix and
+          # are excluded — they cannot be exploited in production.
+          npm audit --omit=dev --audit-level=high
+
+      - name: Report all vulnerability summary
+        working-directory: products/humanid/apps/api
+        continue-on-error: true
+        run: |
+          echo "--- Full audit summary (informational) ---"
+          npm audit --audit-level=moderate || true
 
       - name: Generate Prisma client
         working-directory: products/humanid/apps/api
