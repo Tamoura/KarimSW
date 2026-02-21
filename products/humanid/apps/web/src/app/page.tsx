@@ -1,4 +1,5 @@
 import Link from "next/link";
+import CredentialCarousel from "@/components/CredentialCarousel";
 
 export const metadata = {
   title: "HumanID — The Internet's Identity Layer",
@@ -283,67 +284,9 @@ export default function LandingPage() {
                 </p>
               </div>
 
-              {/* Right column — credential card mockup (desktop only) */}
-              <div className="hidden lg:flex justify-center lg:justify-end" aria-hidden="true">
-                <div className="relative w-80">
-                  {/* Glow effect behind card */}
-                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary-500 to-cyan-500 opacity-20 blur-xl scale-105" />
-
-                  {/* Card */}
-                  <div className="relative bg-gray-800 rounded-2xl overflow-hidden border border-gray-700 shadow-2xl">
-                    {/* Top accent bar */}
-                    <div className="h-1.5 w-full bg-gradient-to-r from-primary-400 to-cyan-400" />
-
-                    {/* Card header */}
-                    <div className="px-6 pt-5 pb-4 flex items-center justify-between border-b border-gray-700">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded bg-primary-500 flex items-center justify-center">
-                          <span className="text-white font-bold text-xs">H</span>
-                        </div>
-                        <span className="text-white text-sm font-semibold">HumanID</span>
-                      </div>
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold bg-success-500/10 text-success-400 border border-success-500/20 px-2 py-0.5 rounded-full">
-                        <span className="w-1.5 h-1.5 rounded-full bg-success-400 inline-block" />
-                        Verified
-                      </span>
-                    </div>
-
-                    {/* Card body */}
-                    <div className="px-6 py-5 space-y-4">
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Credential Type</p>
-                        <p className="text-white font-semibold text-base">University Degree</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Holder</p>
-                        <p className="text-white font-medium">Jane Smith</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Subject</p>
-                        <p className="text-gray-300 text-sm">BSc Computer Science</p>
-                        <p className="text-gray-400 text-sm">National University</p>
-                      </div>
-                      <div className="pt-1">
-                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">DID</p>
-                        <p className="text-gray-400 text-xs font-mono break-all">did:web:nud.ac.ae</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Issued</p>
-                        <p className="text-gray-400 text-sm">2024-06-15</p>
-                      </div>
-                    </div>
-
-                    {/* Card footer — Valid indicator */}
-                    <div className="px-6 pb-5">
-                      <div className="h-px w-full bg-gray-700 mb-4" />
-                      <div className="flex items-center justify-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-success-400 shadow-[0_0_6px_2px_rgba(81,207,102,0.5)]" />
-                        <span className="text-success-400 text-sm font-semibold tracking-wide">Valid</span>
-                        <span className="w-2 h-2 rounded-full bg-success-400 shadow-[0_0_6px_2px_rgba(81,207,102,0.5)]" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              {/* Right column — rotating credential carousel (desktop only) */}
+              <div className="hidden lg:flex justify-center lg:justify-end">
+                <CredentialCarousel />
               </div>
             </div>
           </div>
