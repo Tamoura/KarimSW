@@ -488,7 +488,9 @@ model Credential {
   revokedAt  DateTime? @map("revoked_at")
   acceptedAt DateTime? @map("accepted_at")
 
-  // Relations
+  // Relations — intentionally using Restrict (Prisma default) on DID references
+  // to prevent accidental deletion of DIDs that have issued/held credentials.
+  // Deactivate the DID instead; delete only after credentials are revoked/archived.
   holderDid     DID                     @relation("holder_did", fields: [holderDidId], references: [id])
   issuerDid     DID                     @relation("issuer_did", fields: [issuerDidId], references: [id])
   issuer        Issuer?                 @relation(fields: [issuerId], references: [id])
@@ -1114,6 +1116,7 @@ model GovernanceProposal {
   @@index([status])
   @@index([authorId])
   @@index([category])
+  @@index([votingEndsAt])
   @@map("governance_proposals")
 }
 

@@ -106,7 +106,7 @@ async function validateWebhookUrl(url: string): Promise<void> {
     }
   } catch (error) {
     if (error instanceof AppError) throw error;
-    // DNS resolution failed — allow through (might be a valid but unresolvable-from-server hostname)
+    throw new AppError(400, 'bad-request', 'Could not resolve webhook URL hostname');
   }
 }
 
@@ -305,6 +305,7 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
           },
           body: JSON.stringify(testPayload),
           signal: controller.signal,
+          redirect: 'error',
         }).catch(() => null);
 
         clearTimeout(timeout);

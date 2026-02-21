@@ -410,77 +410,90 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
         throw new AppError(400, 'bad-request', 'Provided old key does not match current CLAIMS_ENCRYPTION_KEY');
       }
 
-      let credentialsMigrated = 0;
-      let didsMigrated = 0;
-      let webhooksMigrated = 0;
-      let skipped = 0;
-
-      // Re-encrypt credential claims
+      // Collect all re-encryption operations, then execute atomically
       const credentials = await fastify.prisma.credential.findMany({
         select: { id: true, encryptedClaims: true },
       });
+      const dids = await fastify.prisma.dID.findMany({
+        select: { id: true, encryptedPrivateKey: true },
+      });
+      const webhooks = await fastify.prisma.webhook.findMany({
+        select: { id: true, secret: true },
+      });
+
+      // Pre-compute all re-encryptions before touching the DB
+      const credentialUpdates: { id: string; encryptedClaims: string }[] = [];
+      const didUpdates: { id: string; encryptedPrivateKey: string }[] = [];
+      const webhookUpdates: { id: string; secret: string }[] = [];
+      const errors: { type: string; id: string; error: string }[] = [];
+
       for (const cred of credentials) {
         if (!cred.encryptedClaims) continue;
         try {
           const reEncrypted = reEncrypt(cred.encryptedClaims, body.oldKeyHex, body.newKeyHex);
-          await fastify.prisma.credential.update({
-            where: { id: cred.id },
-            data: { encryptedClaims: reEncrypted },
-          });
-          credentialsMigrated++;
-        } catch {
-          skipped++;
+          credentialUpdates.push({ id: cred.id, encryptedClaims: reEncrypted });
+        } catch (err) {
+          errors.push({ type: 'credential', id: cred.id, error: String(err) });
         }
       }
 
-      // Re-encrypt DID private keys
-      const dids = await fastify.prisma.dID.findMany({
-        select: { id: true, encryptedPrivateKey: true },
-      });
       for (const did of dids) {
         if (!did.encryptedPrivateKey) continue;
         try {
           const reEncrypted = reEncrypt(did.encryptedPrivateKey, body.oldKeyHex, body.newKeyHex);
-          await fastify.prisma.dID.update({
-            where: { id: did.id },
-            data: { encryptedPrivateKey: reEncrypted },
-          });
-          didsMigrated++;
-        } catch {
-          skipped++;
+          didUpdates.push({ id: did.id, encryptedPrivateKey: reEncrypted });
+        } catch (err) {
+          errors.push({ type: 'did', id: did.id, error: String(err) });
         }
       }
 
-      // Re-encrypt webhook secrets (only those in iv:tag:data format)
-      const webhooks = await fastify.prisma.webhook.findMany({
-        select: { id: true, secret: true },
-      });
       for (const wh of webhooks) {
         if (!wh.secret || !wh.secret.includes(':')) continue;
         try {
           const reEncrypted = reEncrypt(wh.secret, body.oldKeyHex, body.newKeyHex);
-          await fastify.prisma.webhook.update({
-            where: { id: wh.id },
-            data: { secret: reEncrypted },
-          });
-          webhooksMigrated++;
-        } catch {
-          skipped++;
+          webhookUpdates.push({ id: wh.id, secret: reEncrypted });
+        } catch (err) {
+          errors.push({ type: 'webhook', id: wh.id, error: String(err) });
         }
       }
 
+      // If any re-encryption failed, abort before writing — no split state
+      if (errors.length > 0) {
+        logger.error('Key rotation aborted — re-encryption failures', { errors });
+        return reply.code(400).send({
+          message: 'Key rotation aborted due to re-encryption failures. No data was modified.',
+          errors,
+        });
+      }
+
+      // Apply all updates atomically in a single transaction
+      await fastify.prisma.$transaction(
+        [
+          ...credentialUpdates.map((u) =>
+            fastify.prisma.credential.update({ where: { id: u.id }, data: { encryptedClaims: u.encryptedClaims } })
+          ),
+          ...didUpdates.map((u) =>
+            fastify.prisma.dID.update({ where: { id: u.id }, data: { encryptedPrivateKey: u.encryptedPrivateKey } })
+          ),
+          ...webhookUpdates.map((u) =>
+            fastify.prisma.webhook.update({ where: { id: u.id }, data: { secret: u.secret } })
+          ),
+        ],
+        { timeout: 60000 }
+      );
+
       logger.info('Encryption key rotation complete', {
-        credentialsMigrated,
-        didsMigrated,
-        webhooksMigrated,
+        credentialsMigrated: credentialUpdates.length,
+        didsMigrated: didUpdates.length,
+        webhooksMigrated: webhookUpdates.length,
       });
 
       return reply.send({
         message: 'Encryption key rotation complete. Update CLAIMS_ENCRYPTION_KEY env var to the new key.',
-        credentialsMigrated,
-        didsMigrated,
-        webhooksMigrated,
-        skipped,
+        credentialsMigrated: credentialUpdates.length,
+        didsMigrated: didUpdates.length,
+        webhooksMigrated: webhookUpdates.length,
+        skipped: 0,
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());

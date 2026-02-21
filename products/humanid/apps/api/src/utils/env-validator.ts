@@ -100,10 +100,13 @@ function validateClaimsEncryption(): ValidationResult {
   if (!encryptionKey) {
     if (isProduction) {
       errors.push('CLAIMS_ENCRYPTION_KEY is required in production for credential claim encryption');
-      errors.push('Generate a key: openssl rand -hex 32');
+      errors.push('Generate a key: openssl rand -hex 32 (produces 64 hex chars = 32 bytes for AES-256)');
     } else {
       warnings.push('CLAIMS_ENCRYPTION_KEY not set - credential claims will not be encrypted at rest');
     }
+  } else if (encryptionKey.length !== 64) {
+    errors.push('CLAIMS_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes for AES-256)');
+    errors.push('Generate a key: openssl rand -hex 32 (produces 64 hex chars = 32 bytes for AES-256)');
   }
 
   return { valid: errors.length === 0, errors, warnings };

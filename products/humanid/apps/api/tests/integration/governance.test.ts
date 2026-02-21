@@ -140,6 +140,7 @@ describe('Decentralized Governance - /api/v1/governance', () => {
       const res = await app.inject({
         method: 'GET',
         url: `/api/v1/governance/proposals/${proposalId}/results`,
+        headers: { authorization: `Bearer ${devToken}` },
       });
 
       expect(res.statusCode).toBe(200);
@@ -156,6 +157,7 @@ describe('Decentralized Governance - /api/v1/governance', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/governance/params',
+        headers: { authorization: `Bearer ${devToken}` },
       });
 
       expect(res.statusCode).toBe(200);

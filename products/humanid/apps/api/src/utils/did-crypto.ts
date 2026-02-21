@@ -242,5 +242,8 @@ export function serializeKeyPair(keyPair: Ed25519KeyPair) {
  * Deserialize key pair from storage.
  */
 export function deserializePrivateKey(privateKeyHex: string): Uint8Array {
+  if (privateKeyHex.length !== 64) {
+    throw new Error('Invalid private key: expected 64 hex characters (32 bytes for Ed25519)');
+  }
   return new Uint8Array(Buffer.from(privateKeyHex, 'hex'));
 }
