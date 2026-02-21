@@ -84,12 +84,22 @@ const agentRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
+      const query = request.query as { page?: string; limit?: string };
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
 
-      const agents = await fastify.prisma.agentIdentity.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        include: { _count: { select: { delegations: true } } },
-      });
+      const where = { userId };
+      const [agents, total] = await Promise.all([
+        fastify.prisma.agentIdentity.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: { _count: { select: { delegations: true } } },
+        }),
+        fastify.prisma.agentIdentity.count({ where }),
+      ]);
 
       return reply.send({
         agents: agents.map(a => ({
@@ -102,6 +112,10 @@ const agentRoutes: FastifyPluginAsync = async (fastify) => {
           delegationCount: a._count.delegations,
           createdAt: a.createdAt.toISOString(),
         })),
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());

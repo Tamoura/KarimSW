@@ -160,8 +160,11 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
 
-      const query = request.query as { role?: string };
+      const query = request.query as { role?: string; page?: string; limit?: string };
       const userId = request.currentUser!.id;
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
 
       // Get user's DID IDs
       const userDids = await fastify.prisma.dID.findMany({
@@ -185,20 +188,25 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
         };
       }
 
-      const credentials = await fastify.prisma.credential.findMany({
-        where: whereClause,
-        orderBy: { issuedAt: 'desc' },
-        select: {
-          id: true,
-          credentialType: true,
-          status: true,
-          issuedAt: true,
-          expiresAt: true,
-          revokedAt: true,
-          holderDidId: true,
-          issuerDidId: true,
-        },
-      });
+      const [credentials, total] = await Promise.all([
+        fastify.prisma.credential.findMany({
+          where: whereClause,
+          orderBy: { issuedAt: 'desc' },
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            credentialType: true,
+            status: true,
+            issuedAt: true,
+            expiresAt: true,
+            revokedAt: true,
+            holderDidId: true,
+            issuerDidId: true,
+          },
+        }),
+        fastify.prisma.credential.count({ where: whereClause }),
+      ]);
 
       return reply.send({
         credentials: credentials.map((c) => ({
@@ -207,7 +215,10 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
           expiresAt: c.expiresAt?.toISOString() || null,
           revokedAt: c.revokedAt?.toISOString() || null,
         })),
-        total: credentials.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) {

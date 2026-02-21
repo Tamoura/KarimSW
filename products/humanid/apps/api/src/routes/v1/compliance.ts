@@ -113,16 +113,24 @@ const complianceRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/controls', async (request, reply) => {
     try {
       await requireAdmin(request);
-      const query = request.query as { framework?: string; status?: string };
+      const query = request.query as { framework?: string; status?: string; page?: string; limit?: string };
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
 
       const where: Record<string, unknown> = {};
       if (query.framework) where.framework = query.framework;
       if (query.status) where.status = query.status;
 
-      const controls = await fastify.prisma.complianceControl.findMany({
-        where,
-        orderBy: { createdAt: 'asc' },
-      });
+      const [controls, total] = await Promise.all([
+        fastify.prisma.complianceControl.findMany({
+          where,
+          orderBy: { createdAt: 'asc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.complianceControl.count({ where }),
+      ]);
 
       return reply.send({
         controls: controls.map(c => ({
@@ -131,7 +139,10 @@ const complianceRoutes: FastifyPluginAsync = async (fastify) => {
           createdAt: c.createdAt.toISOString(),
           updatedAt: c.updatedAt.toISOString(),
         })),
-        total: controls.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());

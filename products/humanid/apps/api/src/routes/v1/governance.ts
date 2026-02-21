@@ -71,15 +71,24 @@ const governanceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /api/v1/governance/proposals - List proposals
   fastify.get('/proposals', async (request, reply) => {
-    const query = request.query as { status?: string; category?: string };
+    const query = request.query as { status?: string; category?: string; page?: string; limit?: string };
+    const page = parseInt(query.page || '1');
+    const limit = Math.min(parseInt(query.limit || '50'), 100);
+    const skip = (page - 1) * limit;
+
     const where: Record<string, unknown> = {};
     if (query.status) where.status = query.status;
     if (query.category) where.category = query.category;
 
-    const proposals = await fastify.prisma.governanceProposal.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
+    const [proposals, total] = await Promise.all([
+      fastify.prisma.governanceProposal.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      fastify.prisma.governanceProposal.count({ where }),
+    ]);
 
     return reply.send({
       proposals: proposals.map(p => ({
@@ -93,7 +102,10 @@ const governanceRoutes: FastifyPluginAsync = async (fastify) => {
         votingEndsAt: p.votingEndsAt?.toISOString(),
         createdAt: p.createdAt.toISOString(),
       })),
-      total: proposals.length,
+      total,
+      page,
+      pageSize: limit,
+      totalPages: Math.ceil(total / limit),
     });
   });
 

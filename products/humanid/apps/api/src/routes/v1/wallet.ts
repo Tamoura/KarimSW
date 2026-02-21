@@ -17,6 +17,10 @@ const walletRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
 
       const userId = request.currentUser!.id;
+      const query = request.query as { page?: string; limit?: string };
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
 
       // Get user's DID IDs
       const userDids = await fastify.prisma.dID.findMany({
@@ -25,13 +29,19 @@ const walletRoutes: FastifyPluginAsync = async (fastify) => {
       });
       const didIds = userDids.map((d) => d.id);
 
-      const credentials = await fastify.prisma.credential.findMany({
-        where: { holderDidId: { in: didIds } },
-        orderBy: { issuedAt: 'desc' },
-        include: {
-          issuerDid: { select: { did: true } },
-        },
-      });
+      const where = { holderDidId: { in: didIds } };
+      const [credentials, total] = await Promise.all([
+        fastify.prisma.credential.findMany({
+          where,
+          orderBy: { issuedAt: 'desc' },
+          skip,
+          take: limit,
+          include: {
+            issuerDid: { select: { did: true } },
+          },
+        }),
+        fastify.prisma.credential.count({ where }),
+      ]);
 
       return reply.send({
         credentials: credentials.map((c) => ({
@@ -43,7 +53,10 @@ const walletRoutes: FastifyPluginAsync = async (fastify) => {
           expiresAt: c.expiresAt?.toISOString() || null,
           acceptedAt: c.acceptedAt?.toISOString() || null,
         })),
-        total: credentials.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) {

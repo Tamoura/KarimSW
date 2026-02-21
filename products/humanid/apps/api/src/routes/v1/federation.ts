@@ -72,11 +72,21 @@ const federationRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
+      const query = request.query as { page?: string; limit?: string };
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
 
-      const links = await fastify.prisma.federationLink.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-      });
+      const where = { userId };
+      const [links, total] = await Promise.all([
+        fastify.prisma.federationLink.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.federationLink.count({ where }),
+      ]);
 
       return reply.send({
         links: links.map(l => ({
@@ -90,7 +100,10 @@ const federationRoutes: FastifyPluginAsync = async (fastify) => {
           lastSyncedAt: l.lastSyncedAt?.toISOString() || null,
           createdAt: l.createdAt.toISOString(),
         })),
-        total: links.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
@@ -114,13 +127,12 @@ const federationRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (!link) {
-        return reply.send({ found: false, didId: null, userId: null });
+        return reply.send({ found: false, didId: null });
       }
 
       return reply.send({
         found: true,
         didId: link.didId,
-        userId: link.userId,
         protocol: link.protocol,
         direction: link.direction,
       });

@@ -20,6 +20,115 @@ import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { base58Encode } from '../../utils/did-crypto.js';
 
+/**
+ * Validate the CBOR attestation object structure.
+ *
+ * WebAuthn attestation objects are CBOR-encoded maps with three keys:
+ *   - "fmt" (attestation format: "none", "packed", "tpm", etc.)
+ *   - "attStmt" (attestation statement)
+ *   - "authData" (authenticator data, min 37 bytes)
+ *
+ * AuthData structure (first 37+ bytes):
+ *   - bytes 0-31:  SHA-256 hash of the RP ID
+ *   - byte  32:    flags (bit 0 = UP, bit 2 = UV, bit 6 = AT, bit 7 = ED)
+ *   - bytes 33-36: sign count (big-endian uint32)
+ *
+ * Without a full CBOR library we perform structural validation:
+ *   1. Buffer must be at least 37 bytes (authData minimum)
+ *   2. First byte must be a CBOR map tag (0xa0-0xbf for definite, 0xbf for indefinite)
+ *   3. RP ID hash (first 32 bytes of authData) must match expected RP
+ *   4. User-present flag must be set
+ */
+function validateAttestationObject(
+  attestationB64: string,
+  rpId: string,
+): { valid: boolean; reason?: string } {
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(attestationB64, 'base64url');
+  } catch {
+    return { valid: false, reason: 'Invalid base64url encoding' };
+  }
+
+  // Minimum size: CBOR overhead (~10 bytes) + 37 bytes authData
+  if (buf.length < 47) {
+    return { valid: false, reason: 'Attestation object too small' };
+  }
+
+  // First byte must be a CBOR map indicator (0xa0-0xbf)
+  const firstByte = buf[0];
+  if (firstByte < 0xa0 || firstByte > 0xbf) {
+    return { valid: false, reason: 'Invalid CBOR map header' };
+  }
+
+  // Locate authData: scan for the CBOR string "authData" (68617574684461746)
+  // The key "authData" is 8 bytes. In CBOR, it's encoded as 0x68 (text string length 8) + "authData"
+  const authDataKey = Buffer.from('6861757468446174611', 'hex').subarray(0, 9); // 0x68 + "authData"
+  const keyOffset = buf.indexOf(authDataKey);
+  if (keyOffset === -1) {
+    // Try alternate CBOR encoding for "authData" (could be 0x68 prefix)
+    const altKey = Buffer.concat([Buffer.from([0x68]), Buffer.from('authData')]);
+    const altOffset = buf.indexOf(altKey);
+    if (altOffset === -1) {
+      return { valid: false, reason: 'authData key not found in CBOR map' };
+    }
+    // Found with alternate encoding - validate from there
+    return validateAuthData(buf, altOffset + altKey.length, rpId);
+  }
+
+  return validateAuthData(buf, keyOffset + authDataKey.length, rpId);
+}
+
+function validateAuthData(
+  buf: Buffer,
+  authDataValueOffset: number,
+  rpId: string,
+): { valid: boolean; reason?: string } {
+  // The value after the key should be a CBOR byte string
+  // 0x58 = byte string with 1-byte length, 0x59 = 2-byte length
+  const lenTag = buf[authDataValueOffset];
+  let authDataStart: number;
+  let authDataLen: number;
+
+  if (lenTag >= 0x40 && lenTag <= 0x57) {
+    // Short byte string (length encoded in bottom 5 bits)
+    authDataLen = lenTag - 0x40;
+    authDataStart = authDataValueOffset + 1;
+  } else if (lenTag === 0x58) {
+    authDataLen = buf[authDataValueOffset + 1];
+    authDataStart = authDataValueOffset + 2;
+  } else if (lenTag === 0x59) {
+    authDataLen = buf.readUInt16BE(authDataValueOffset + 1);
+    authDataStart = authDataValueOffset + 3;
+  } else {
+    return { valid: false, reason: 'Invalid authData CBOR encoding' };
+  }
+
+  if (authDataLen < 37) {
+    return { valid: false, reason: 'authData too short (minimum 37 bytes)' };
+  }
+
+  if (authDataStart + authDataLen > buf.length) {
+    return { valid: false, reason: 'authData extends beyond buffer' };
+  }
+
+  // Verify RP ID hash (first 32 bytes of authData)
+  const rpIdHash = createHash('sha256').update(rpId).digest();
+  const attestedRpIdHash = buf.subarray(authDataStart, authDataStart + 32);
+  if (!rpIdHash.equals(attestedRpIdHash)) {
+    return { valid: false, reason: 'RP ID hash mismatch' };
+  }
+
+  // Verify flags byte (byte 32 of authData)
+  const flags = buf[authDataStart + 32];
+  const userPresent = (flags & 0x01) !== 0;
+  if (!userPresent) {
+    return { valid: false, reason: 'User-present flag not set' };
+  }
+
+  return { valid: true };
+}
+
 const registerOptionsSchema = z.object({
   didId: z.string().uuid('Invalid DID ID'),
 });
@@ -168,8 +277,7 @@ const webauthnRoutes: FastifyPluginAsync = async (fastify) => {
         throw new AppError(400, 'bad-request', 'Registration challenge expired or not found');
       }
 
-      // Basic attestation validation
-      // In production, use @simplewebauthn/server for full CBOR parsing
+      // Attestation validation: clientDataJSON + attestation object
       try {
         const clientDataJSON = Buffer.from(body.credential.response.clientDataJSON, 'base64url');
         const clientData = JSON.parse(clientDataJSON.toString('utf8'));
@@ -188,6 +296,19 @@ const webauthnRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (parseError) {
         if (parseError instanceof AppError) throw parseError;
         throw new AppError(400, 'bad-request', 'Invalid attestation response');
+      }
+
+      // CBOR attestation object validation (RP ID hash, flags, structure)
+      const attestationResult = validateAttestationObject(
+        body.credential.response.attestationObject,
+        RP_ID(),
+      );
+      if (!attestationResult.valid) {
+        logger.warn('Attestation object validation failed', {
+          reason: attestationResult.reason,
+          didId: body.didId,
+        });
+        throw new AppError(400, 'bad-request', `Attestation validation failed: ${attestationResult.reason}`);
       }
 
       // Store the credential binding
@@ -306,16 +427,23 @@ const webauthnRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
 
       const userId = request.currentUser!.id;
+      const query = request.query as { page?: string; limit?: string };
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
 
-      const bindings = await fastify.prisma.biometricBinding.findMany({
-        where: {
-          did: { userId },
-          type: 'FIDO2',
-        },
-        include: {
-          did: { select: { did: true } },
-        },
-      });
+      const where = { did: { userId }, type: 'FIDO2' as const };
+      const [bindings, total] = await Promise.all([
+        fastify.prisma.biometricBinding.findMany({
+          where,
+          skip,
+          take: limit,
+          include: {
+            did: { select: { did: true } },
+          },
+        }),
+        fastify.prisma.biometricBinding.count({ where }),
+      ]);
 
       return reply.send({
         credentials: bindings.map((b) => ({
@@ -325,7 +453,10 @@ const webauthnRoutes: FastifyPluginAsync = async (fastify) => {
           createdAt: b.createdAt.toISOString(),
           metadata: b.metadata,
         })),
-        total: bindings.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) {

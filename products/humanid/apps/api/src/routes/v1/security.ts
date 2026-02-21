@@ -75,15 +75,24 @@ const securityRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await requireAdmin(request);
 
-      const query = request.query as { status?: string; severity?: string };
+      const query = request.query as { status?: string; severity?: string; page?: string; limit?: string };
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
+
       const where: Record<string, unknown> = {};
       if (query.status) where.status = query.status;
       if (query.severity) where.severity = query.severity;
 
-      const reports = await fastify.prisma.vulnerabilityReport.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-      });
+      const [reports, total] = await Promise.all([
+        fastify.prisma.vulnerabilityReport.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.vulnerabilityReport.count({ where }),
+      ]);
 
       return reply.send({
         reports: reports.map(r => ({
@@ -96,7 +105,10 @@ const securityRoutes: FastifyPluginAsync = async (fastify) => {
           bountyAmount: r.bountyAmount,
           createdAt: r.createdAt.toISOString(),
         })),
-        total: reports.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
@@ -179,11 +191,22 @@ const securityRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/v1/security/advisories - List public advisories (no auth)
-  fastify.get('/advisories', async (_request, reply) => {
-    const advisories = await fastify.prisma.securityAdvisory.findMany({
-      where: { publishedAt: { not: null } },
-      orderBy: { publishedAt: 'desc' },
-    });
+  fastify.get('/advisories', async (request, reply) => {
+    const query = request.query as { page?: string; limit?: string };
+    const page = parseInt(query.page || '1');
+    const limit = Math.min(parseInt(query.limit || '50'), 100);
+    const skip = (page - 1) * limit;
+
+    const where = { publishedAt: { not: null } };
+    const [advisories, total] = await Promise.all([
+      fastify.prisma.securityAdvisory.findMany({
+        where,
+        orderBy: { publishedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      fastify.prisma.securityAdvisory.count({ where }),
+    ]);
 
     return reply.send({
       advisories: advisories.map(a => ({
@@ -194,7 +217,10 @@ const securityRoutes: FastifyPluginAsync = async (fastify) => {
         patchedVersions: a.patchedVersions,
         publishedAt: a.publishedAt?.toISOString(),
       })),
-      total: advisories.length,
+      total,
+      page,
+      pageSize: limit,
+      totalPages: Math.ceil(total / limit),
     });
   });
 };

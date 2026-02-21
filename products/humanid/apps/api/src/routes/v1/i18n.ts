@@ -58,11 +58,22 @@ const i18nRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/v1/i18n/locales - List locales (public)
-  fastify.get('/locales', async (_request, reply) => {
-    const locales = await fastify.prisma.locale.findMany({
-      where: { isActive: true },
-      orderBy: { code: 'asc' },
-    });
+  fastify.get('/locales', async (request, reply) => {
+    const query = request.query as { page?: string; limit?: string };
+    const page = parseInt(query.page || '1');
+    const limit = Math.min(parseInt(query.limit || '50'), 100);
+    const skip = (page - 1) * limit;
+
+    const where = { isActive: true };
+    const [locales, total] = await Promise.all([
+      fastify.prisma.locale.findMany({
+        where,
+        orderBy: { code: 'asc' },
+        skip,
+        take: limit,
+      }),
+      fastify.prisma.locale.count({ where }),
+    ]);
 
     return reply.send({
       locales: locales.map(l => ({
@@ -71,7 +82,10 @@ const i18nRoutes: FastifyPluginAsync = async (fastify) => {
         nativeName: l.nativeName,
         completionPercent: l.completionPercent,
       })),
-      total: locales.length,
+      total,
+      page,
+      pageSize: limit,
+      totalPages: Math.ceil(total / limit),
     });
   });
 
