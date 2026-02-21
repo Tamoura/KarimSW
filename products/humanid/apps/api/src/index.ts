@@ -5,9 +5,13 @@
  * and handles graceful shutdown.
  */
 
+import { initTracing, shutdownTracing } from './tracing.js';
 import { buildApp } from './app.js';
 import { logger } from './utils/logger.js';
 import { validateEnvironment } from './utils/env-validator.js';
+
+// Initialise OTel before anything else so instrumentation patches apply
+initTracing();
 
 async function start() {
   try {
@@ -35,6 +39,7 @@ async function start() {
       process.on(signal, async () => {
         logger.info('Received ' + signal + ', closing server...');
         await app.close();
+        await shutdownTracing();
         process.exit(0);
       });
     });
