@@ -111,10 +111,21 @@ const offlineRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
 
-      const tokens = await fastify.prisma.offlineToken.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-      });
+      const query = request.query as { page?: string; limit?: string };
+      const page = Math.max(1, parseInt(query.page || '1') || 1);
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50') || 50, 100));
+      const skip = (page - 1) * limit;
+
+      const where = { userId };
+      const [tokens, total] = await Promise.all([
+        fastify.prisma.offlineToken.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.offlineToken.count({ where }),
+      ]);
 
       return reply.send({
         tokens: tokens.map(t => ({
@@ -127,7 +138,10 @@ const offlineRoutes: FastifyPluginAsync = async (fastify) => {
           syncedAt: t.syncedAt?.toISOString() || null,
           createdAt: t.createdAt.toISOString(),
         })),
-        total: tokens.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());

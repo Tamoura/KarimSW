@@ -182,20 +182,31 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
 
-      const webhooks = await fastify.prisma.webhook.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          url: true,
-          events: true,
-          status: true,
-          description: true,
-          failureCount: true,
-          lastDeliveredAt: true,
-          createdAt: true,
-        },
-      });
+      const query = request.query as { page?: string; limit?: string };
+      const page = Math.max(1, parseInt(query.page || '1') || 1);
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50') || 50, 100));
+      const skip = (page - 1) * limit;
+
+      const where = { userId };
+      const [webhooks, total] = await Promise.all([
+        fastify.prisma.webhook.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            url: true,
+            events: true,
+            status: true,
+            description: true,
+            failureCount: true,
+            lastDeliveredAt: true,
+            createdAt: true,
+          },
+        }),
+        fastify.prisma.webhook.count({ where }),
+      ]);
 
       return reply.send({
         webhooks: webhooks.map((w) => ({
@@ -203,7 +214,10 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
           lastDeliveredAt: w.lastDeliveredAt?.toISOString() || null,
           createdAt: w.createdAt.toISOString(),
         })),
-        total: webhooks.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) {
