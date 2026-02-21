@@ -143,7 +143,7 @@ export default function CredentialCarousel() {
 
         {/* Card shell */}
         <div
-          className={`relative bg-gray-800 rounded-2xl overflow-hidden border border-gray-700 shadow-2xl transition-opacity duration-250 ${animating ? "opacity-0" : "opacity-100"}`}
+          className={`relative bg-gray-800 rounded-2xl overflow-hidden border border-gray-700 shadow-2xl transition-opacity duration-250 ${fading ? "opacity-0" : "opacity-100"}`}
           style={{ transition: "opacity 0.25s ease" }}
         >
           {/* Top accent bar */}
@@ -201,7 +201,7 @@ export default function CredentialCarousel() {
             role="tab"
             aria-selected={i === active}
             aria-label={c.type}
-            onClick={() => goTo(i)}
+            onClick={() => handleDotClick(i)}
             className={`rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-white ${
               i === active
                 ? "w-6 h-2 bg-white"
