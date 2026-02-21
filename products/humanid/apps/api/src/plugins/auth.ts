@@ -85,8 +85,8 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
         throw new AppError(403, 'account-suspended', 'Account is suspended or deactivated');
       }
 
-      // Update last used timestamp (fire-and-forget)
-      fastify.prisma.apiKey.update({
+      // Update last used timestamp
+      await fastify.prisma.apiKey.update({
         where: { id: apiKey.id },
         data: { lastUsedAt: new Date() },
       }).catch((err) => {
@@ -95,6 +95,18 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
           error: err instanceof Error ? err.message : 'unknown',
         });
       });
+
+      // Enforce per-key rate limit if configured and Redis available
+      if (apiKey.rateLimit && fastify.redis) {
+        const keyRateLimitKey = `apikey-ratelimit:${apiKey.id}`;
+        const current = await fastify.redis.incr(keyRateLimitKey);
+        if (current === 1) {
+          await fastify.redis.expire(keyRateLimitKey, 60);
+        }
+        if (current > apiKey.rateLimit) {
+          throw new AppError(429, 'rate-limited', 'API key rate limit exceeded');
+        }
+      }
 
       request.currentUser = apiKey.user;
       request.apiKey = apiKey;

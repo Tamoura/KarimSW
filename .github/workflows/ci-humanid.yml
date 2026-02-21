@@ -41,10 +41,10 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/humanid_test
-      JWT_SECRET: ci-test-jwt-secret-must-be-at-least-32-characters-long
-      CLAIMS_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      JWT_SECRET: ${{ secrets.CI_JWT_SECRET || 'ci-test-jwt-secret-must-be-at-least-32-characters-long' }}
+      CLAIMS_ENCRYPTION_KEY: ${{ secrets.CI_CLAIMS_ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }}
       REDIS_URL: redis://localhost:6379
-      INTERNAL_API_KEY: ci-test-internal-key
+      INTERNAL_API_KEY: ${{ secrets.CI_INTERNAL_API_KEY || 'ci-test-internal-key' }}
       NODE_ENV: test
 
     steps:
@@ -60,9 +60,17 @@ jobs:
         working-directory: products/humanid/apps/api
         run: npm ci
 
+      - name: Audit dependencies
+        working-directory: products/humanid/apps/api
+        run: npm audit --audit-level=high || true
+
       - name: Generate Prisma client
         working-directory: products/humanid/apps/api
         run: npx prisma generate
+
+      - name: Type check
+        working-directory: products/humanid/apps/api
+        run: npx tsc --noEmit || true
 
       - name: Run database migrations
         working-directory: products/humanid/apps/api

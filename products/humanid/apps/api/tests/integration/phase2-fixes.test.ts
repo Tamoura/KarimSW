@@ -281,10 +281,11 @@ describe('Phase 2 Risk Remediation Fixes', () => {
       assertPaginationShape(res.json());
     });
 
-    it('GET /api/v1/governance/proposals returns pagination fields (public endpoint)', async () => {
+    it('GET /api/v1/governance/proposals returns pagination fields', async () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/governance/proposals?page=1&limit=2',
+        headers: { authorization: `Bearer ${accessToken}` },
       });
 
       expect(res.statusCode).toBe(200);

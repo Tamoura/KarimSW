@@ -393,6 +393,13 @@ describe('Auth, Developer & Organizations Extended - error branches', () => {
   // ==================== POST /api/v1/auth/verify-email ====================
 
   describe('POST /api/v1/auth/verify-email', () => {
+    beforeEach(async () => {
+      // Clear rate limit counter so tests aren't affected by cross-suite accumulation
+      if (app.redis) {
+        await app.redis.del('verify-email:ratelimit:127.0.0.1');
+      }
+    });
+
     it('should return 400 for Zod error - missing token', async () => {
       const res = await app.inject({
         method: 'POST', url: '/api/v1/auth/verify-email',

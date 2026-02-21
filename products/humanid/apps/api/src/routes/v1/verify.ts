@@ -26,7 +26,7 @@ const verifyCredentialSchema = z.object({
 
 const createRequestSchema = z.object({
   holderDid: z.string().min(1, 'Holder DID is required'),
-  requestedAttributes: z.array(z.string()).min(1, 'At least one attribute is required'),
+  requestedAttributes: z.array(z.string().min(1).max(100)).min(1, 'At least one attribute is required').max(50, 'Maximum 50 attributes allowed'),
   expiresInHours: z.number().min(1).max(720).optional().default(24),
 });
 

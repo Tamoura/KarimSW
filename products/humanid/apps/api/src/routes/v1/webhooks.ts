@@ -9,6 +9,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { randomBytes, createHmac } from 'crypto';
+import dns from 'dns/promises';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { encrypt, decrypt } from '../../utils/encryption.js';
@@ -31,9 +32,29 @@ const createWebhookSchema = z.object({
 });
 
 /**
- * SSRF protection: reject URLs pointing to private/internal networks.
+ * Check if an IP address is private/reserved.
  */
-function validateWebhookUrl(url: string): void {
+function isPrivateIp(ip: string): boolean {
+  const patterns = [
+    /^127\.\d+\.\d+\.\d+$/,          // 127.0.0.0/8
+    /^10\.\d+\.\d+\.\d+$/,           // 10.0.0.0/8
+    /^172\.(1[6-9]|2\d|3[01])\./,    // 172.16.0.0/12
+    /^192\.168\.\d+\.\d+$/,          // 192.168.0.0/16
+    /^169\.254\.\d+\.\d+$/,          // link-local
+    /^0\.0\.0\.0$/,
+    /^::1$/,                          // IPv6 loopback
+    /^fe80:/i,                        // IPv6 link-local
+    /^fc00:/i,                        // IPv6 unique local
+    /^fd/i,                           // IPv6 unique local
+  ];
+  return patterns.some(p => p.test(ip));
+}
+
+/**
+ * SSRF protection: reject URLs pointing to private/internal networks.
+ * Validates both hostname patterns and resolved DNS IPs.
+ */
+async function validateWebhookUrl(url: string): Promise<void> {
   const parsed = new URL(url);
 
   // Must be HTTPS in production
@@ -41,21 +62,26 @@ function validateWebhookUrl(url: string): void {
     throw new AppError(400, 'bad-request', 'Webhook URL must use HTTPS or HTTP');
   }
 
+  // Enforce HTTPS in production
+  if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
+    throw new AppError(400, 'bad-request', 'Webhook URL must use HTTPS in production');
+  }
+
   const hostname = parsed.hostname.toLowerCase();
 
-  // Block private IPs and localhost
+  // Block private hostnames
   const blockedPatterns = [
     /^localhost$/i,
-    /^127\.\d+\.\d+\.\d+$/,          // 127.0.0.0/8
-    /^10\.\d+\.\d+\.\d+$/,           // 10.0.0.0/8
-    /^172\.(1[6-9]|2\d|3[01])\./,    // 172.16.0.0/12
-    /^192\.168\.\d+\.\d+$/,          // 192.168.0.0/16
-    /^169\.254\.\d+\.\d+$/,          // link-local
+    /^127\.\d+\.\d+\.\d+$/,
+    /^10\.\d+\.\d+\.\d+$/,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\.\d+\.\d+$/,
+    /^169\.254\.\d+\.\d+$/,
     /^0\.0\.0\.0$/,
-    /^\[?::1\]?$/,                    // IPv6 loopback
-    /^\[?fe80:/i,                     // IPv6 link-local
-    /^\[?fc00:/i,                     // IPv6 unique local
-    /^\[?fd/i,                        // IPv6 unique local
+    /^\[?::1\]?$/,
+    /^\[?fe80:/i,
+    /^\[?fc00:/i,
+    /^\[?fd/i,
     /\.internal$/i,
     /\.local$/i,
     /\.localhost$/i,
@@ -65,6 +91,22 @@ function validateWebhookUrl(url: string): void {
     if (pattern.test(hostname)) {
       throw new AppError(400, 'bad-request', 'Webhook URL must not point to a private or internal network');
     }
+  }
+
+  // DNS resolution check: resolve hostname and validate all IPs are public
+  try {
+    const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
+    const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
+    const allIps = [...addresses, ...addresses6];
+
+    for (const ip of allIps) {
+      if (isPrivateIp(ip)) {
+        throw new AppError(400, 'bad-request', 'Webhook URL resolves to a private network address');
+      }
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    // DNS resolution failed — allow through (might be a valid but unresolvable-from-server hostname)
   }
 }
 
@@ -77,7 +119,7 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
       const userId = request.currentUser!.id;
 
       // SSRF protection: validate URL is not internal
-      validateWebhookUrl(body.url);
+      await validateWebhookUrl(body.url);
 
       // Validate event types
       for (const event of body.events) {
@@ -238,7 +280,7 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       // SSRF protection: re-validate URL before delivery
-      validateWebhookUrl(webhook.url);
+      await validateWebhookUrl(webhook.url);
 
       // Attempt delivery (fire-and-forget for test)
       let deliveryStatus = 'FAILED';

@@ -269,6 +269,13 @@ describe('Auth Routes - /api/v1/auth', () => {
   describe('POST /api/v1/auth/verify-email', () => {
     const testEmail = 'verify-test@example.com';
 
+    beforeEach(async () => {
+      // Clear rate limit counter so tests aren't affected by cross-suite accumulation
+      if (app.redis) {
+        await app.redis.del('verify-email:ratelimit:127.0.0.1');
+      }
+    });
+
     afterEach(async () => {
       await cleanupUser(testEmail);
     });
