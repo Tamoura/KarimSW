@@ -38,8 +38,8 @@ interface PaginationMeta {
 const MOCK_SESSIONS: SharingSession[] = [
   {
     id: "s1",
-    verifierName: "National University of Dubai",
-    verifierDomain: "nud.ac.ae",
+    verifierName: "Lund University",
+    verifierDomain: "lu.se",
     credentialTypes: ["University Degree"],
     claimsDisclosed: ["Full Name", "Degree Title", "Graduation Year"],
     sharedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
@@ -48,8 +48,8 @@ const MOCK_SESSIONS: SharingSession[] = [
   },
   {
     id: "s2",
-    verifierName: "Dubai Health Authority",
-    verifierDomain: "dha.gov.ae",
+    verifierName: "NHS England",
+    verifierDomain: "nhs.uk",
     credentialTypes: ["Health Certificate"],
     claimsDisclosed: ["Full Name", "Certificate Number", "Expiry Date"],
     sharedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
@@ -68,8 +68,8 @@ const MOCK_SESSIONS: SharingSession[] = [
   },
   {
     id: "s4",
-    verifierName: "Emirates ID Authority",
-    verifierDomain: "ica.gov.ae",
+    verifierName: "Singapore ICA",
+    verifierDomain: "ica.gov.sg",
     credentialTypes: ["National ID", "Age Proof"],
     claimsDisclosed: ["Full Name", "ID Number", "Age \u2265 21 (zero-knowledge proof)"],
     sharedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
