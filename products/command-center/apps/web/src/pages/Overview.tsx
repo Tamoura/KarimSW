@@ -29,7 +29,7 @@ export default function Overview() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-white mb-1">Executive Overview</h1>
-      <p className="text-gray-500 mb-8">KarimSW company health at a glance</p>
+      <p className="text-gray-500 mb-8">ConnectSW company health at a glance</p>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

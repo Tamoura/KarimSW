@@ -169,7 +169,7 @@ A read-only dashboard backed by a Fastify API that scans the monorepo filesystem
 **User Story**: As an Engineer, I want to see which ports are assigned to which products and what CI pipelines exist so that I avoid port conflicts and understand the deployment setup.
 
 **Acceptance Criteria**:
-- Given the Infrastructure page loads, when the API responds, then 4 stat cards are shown: Frontend Ports (used, with available count), Backend Ports (used, with available count), CI Pipelines count, Port Range (3200-5199).
+- Given the Infrastructure page loads, when the API responds, then 4 stat cards are shown: Frontend Ports (used, with available count), Backend Ports (used, with available count), CI Pipelines count, Port Range (3100-5099).
 - Given port assignments exist, when the page renders, then a grid of product cards shows each product name with color-coded port badges (blue for frontend, green for backend).
 - Given CI workflows exist in `.github/workflows/`, when the page renders, then each pipeline is listed with its filename and associated product name.
 - Given no port assignments are found, when the page renders, then "No port assignments found in registry" is displayed.
@@ -295,7 +295,7 @@ Track KPIs over time (products launched, tests passing, commits per week, agent 
 ### 5.1 CEO Daily Check-In
 
 ```
-1. CEO opens http://localhost:3213
+1. CEO opens http://localhost:3113
 2. Redirect to /overview
 3. CEO scans 4 KPI stat cards for portfolio size
 4. CEO reviews Phase Breakdown badges
@@ -416,8 +416,8 @@ Track KPIs over time (products launched, tests passing, commits per week, agent 
 
 | Service | Port |
 |---------|------|
-| Web (Vite dev server) | 3213 |
-| API (Fastify) | 5109 |
+| Web (Vite dev server) | 3113 |
+| API (Fastify) | 5009 |
 
 ### 7.3 Data Sources
 

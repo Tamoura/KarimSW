@@ -51,11 +51,11 @@ export function getPortAssignments(): PortAssignment[] {
       while ((m = portRegex.exec(content)) !== null) {
         const name = m[1];
         const port = Number(m[2]);
-        if (port >= 3200 && port <= 3299) {
+        if (port >= 3100 && port <= 3199) {
           const existing = assignments.find((a) => a.product === name);
           if (existing) existing.frontendPort = port;
           else assignments.push({ product: name, frontendPort: port, backendPort: null });
-        } else if (port >= 5100 && port <= 5199) {
+        } else if (port >= 5000 && port <= 5099) {
           const existing = assignments.find((a) => a.product === name);
           if (existing) existing.backendPort = port;
           else assignments.push({ product: name, frontendPort: null, backendPort: port });

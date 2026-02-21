@@ -26,7 +26,7 @@ export default function Components() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-white mb-1">Component Library</h1>
-      <p className="text-gray-500 mb-8">Shared @karimsw/* packages</p>
+      <p className="text-gray-500 mb-8">Shared @connectsw/* packages</p>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         <StatCard label="Packages" value={data.totalPackages} color="purple" />

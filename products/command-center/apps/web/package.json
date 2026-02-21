@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 3213",
+    "dev": "vite --port 3113",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint src/"

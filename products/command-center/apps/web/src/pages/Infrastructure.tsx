@@ -37,7 +37,7 @@ export default function Infrastructure() {
         <StatCard label="Frontend Ports" value={data.totalFrontendPorts} sublabel={`${data.availableFrontendPorts} available`} color="blue" />
         <StatCard label="Backend Ports" value={data.totalBackendPorts} sublabel={`${data.availableBackendPorts} available`} color="green" />
         <StatCard label="CI Pipelines" value={data.pipelines.length} color="purple" />
-        <StatCard label="Port Range" value="3200-5199" sublabel="Frontend + Backend" color="orange" />
+        <StatCard label="Port Range" value="3100-5099" sublabel="Frontend + Backend" color="orange" />
       </div>
 
       {/* Port Map */}

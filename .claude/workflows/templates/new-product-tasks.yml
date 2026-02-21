@@ -261,7 +261,7 @@ tasks:
     priority: "high"
     estimated_time_minutes: 120
     acceptance_criteria:
-      - "Next.js dev server starts on port 3200+"
+      - "Next.js dev server starts on port 3100+"
       - "Home page renders without errors"
       - "Tailwind CSS styles apply correctly"
       - "Layout is responsive"
@@ -358,7 +358,7 @@ tasks:
     acceptance_criteria:
       - "All unit tests pass (backend + frontend)"
       - "All E2E tests pass"
-      - "App loads without errors on http://localhost:3200+"
+      - "App loads without errors on http://localhost:3100+"
       - "All UI elements visible and styled"
       - "No console errors"
       - "Test report includes requirement coverage matrix"

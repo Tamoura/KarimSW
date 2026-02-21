@@ -321,7 +321,7 @@ COPY --from=builder /app/apps/api/prisma ./prisma
 
 RUN npm ci --production
 
-EXPOSE 5100
+EXPOSE 5000
 CMD ["node", "dist/index.js"]
 ```
 
@@ -348,7 +348,7 @@ services:
       context: ../..
       dockerfile: infrastructure/docker/api.Dockerfile
     ports:
-      - "5100:5100"
+      - "5000:5000"
     environment:
       DATABASE_URL: postgresql://dev:dev@postgres:5432/app_dev
     depends_on:
@@ -359,9 +359,9 @@ services:
       context: ../..
       dockerfile: infrastructure/docker/web.Dockerfile
     ports:
-      - "3200:3000"
+      - "3100:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:5100
+      NEXT_PUBLIC_API_URL: http://localhost:5000
 
 volumes:
   postgres_data:
@@ -390,12 +390,12 @@ ANALYTICS_KEY         # Analytics service
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 
 # API
-PORT=5100
+PORT=5000
 NODE_ENV=development
 JWT_SECRET=your-secret-here
 
 # Web
-NEXT_PUBLIC_API_URL=http://localhost:5100
+NEXT_PUBLIC_API_URL=http://localhost:5000
 
 # Optional
 SENTRY_DSN=

@@ -85,8 +85,8 @@ release/[product]/v[X.Y.Z]       # Releases
 
 **IMPORTANT**: See `.claude/PORT-REGISTRY.md` for port assignments. All products must use unique ports to run simultaneously.
 
-- Frontend apps: 3200-3299 (assigned per product)
-- Backend APIs: 5100-5199 (assigned per product)
+- Frontend apps: 3100-3199 (assigned per product)
+- Backend APIs: 5000-5099 (assigned per product)
 - Mobile dev servers: 8081-8099 (assigned per product)
 - Databases: default ports in Docker (shared via containers)
 
@@ -197,7 +197,7 @@ KarimSW uses [GitHub's spec-kit](https://github.com/github/spec-kit) methodology
 | `/speckit.implement` | Orchestrator | Execute tasks via specialist agents |
 
 **Key files:**
-- `.specify/memory/constitution.md` — Governing principles (9 articles)
+- `.specify/memory/constitution.md` — Governing principles (10 articles)
 - `.specify/templates/` — Spec, plan, tasks, checklist templates
 - `.specify/templates/commands/` — Command definitions
 - `products/[product]/docs/specs/` — Feature specifications

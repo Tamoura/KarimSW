@@ -41,7 +41,7 @@ export function getComponentStats(): ComponentRegistryStats {
 
 function buildPackageInfo(name: string): SharedPackage {
   const dir = repoPath('packages', name);
-  let description = `@karimsw/${name}`;
+  let description = `@connectsw/${name}`;
 
   // Read package.json for description
   const pkgPath = join(dir, 'package.json');
@@ -57,7 +57,7 @@ function buildPackageInfo(name: string): SharedPackage {
   const hasPrisma = existsSync(join(dir, 'src', 'prisma'));
 
   return {
-    name: `@karimsw/${name}`,
+    name: `@connectsw/${name}`,
     location: `packages/${name}/`,
     description,
     fileCount: countFiles(dir),

@@ -77,16 +77,16 @@ Step 5: Record results
 ### Example: Testing a User Creation Endpoint
 
 ```bash
-# Step 1: Server is running on port 5101
+# Step 1: Server is running on port 5001
 
 # Step 2: Happy path
-curl -X POST http://localhost:5101/api/v1/users \
+curl -X POST http://localhost:5001/api/v1/users \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","name":"Test User","password":"SecurePass123!"}'
 # Expected: 201 with user object (no passwordHash)
 
 # Step 3: Error paths
-curl -X POST http://localhost:5101/api/v1/users \
+curl -X POST http://localhost:5001/api/v1/users \
   -H "Content-Type: application/json" \
   -d '{"email":"not-an-email"}'
 # Expected: 400 with validation errors

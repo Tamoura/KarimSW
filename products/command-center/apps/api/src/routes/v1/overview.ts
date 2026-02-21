@@ -18,7 +18,7 @@ export async function overviewRoutes(fastify: FastifyInstance) {
     }
 
     return {
-      company: 'KarimSW',
+      company: 'ConnectSW',
       stats: {
         totalProducts: products.length,
         totalPackages: packages.length,

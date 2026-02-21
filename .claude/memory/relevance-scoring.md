@@ -109,7 +109,7 @@ These are always included regardless of scoring — they are the agent's own lea
 - ANTI-001: "Using Mocks in E2E Tests" → Use real services with buildApp()
 
 ## Gotchas
-- "Port conflicts" → Use PORT-REGISTRY.md, ports 3200+ for frontend
+- "Port conflicts" → Use PORT-REGISTRY.md, ports 3100+ for frontend
 
 ## Your Past Experience
 - Common mistake to avoid: "Missing Zod validation" → Always validate input

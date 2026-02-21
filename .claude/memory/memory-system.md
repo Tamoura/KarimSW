@@ -116,7 +116,7 @@ Agents learn from experience and share knowledge across products to become more 
   "common_gotchas": [
     {
       "issue": "Next.js port conflicts in development",
-      "solution": "Use ports 3200+ for frontend apps (configured in company standards)",
+      "solution": "Use ports 3100+ for frontend apps (configured in company standards)",
       "category": "configuration"
     },
     {

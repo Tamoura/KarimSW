@@ -128,7 +128,7 @@ test.describe('Infrastructure Page', () => {
 
   test('shows port assignments', async ({ page }) => {
     await page.goto('/infrastructure');
-    await expect(page.locator('main').locator('text=3213').first()).toBeVisible();
+    await expect(page.locator('main').locator('text=3113').first()).toBeVisible();
   });
 });
 

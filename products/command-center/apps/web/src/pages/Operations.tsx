@@ -55,7 +55,7 @@ export default function Operations() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-white mb-1">Operations Guide</h1>
-      <p className="text-gray-500 mb-8">How to operate and manage KarimSW</p>
+      <p className="text-gray-500 mb-8">How to operate and manage ConnectSW</p>
 
       <div className="flex gap-8">
         {/* Sidebar Navigation */}

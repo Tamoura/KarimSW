@@ -236,7 +236,7 @@ Before entering the execution loop, load memory files ONCE and score patterns ag
    - ANTI-001: "Using Mocks in E2E Tests" → Use real services with buildApp()
 
    ## Gotchas
-   - "Port conflicts" → Use PORT-REGISTRY.md, ports 3200+ for frontend
+   - "Port conflicts" → Use PORT-REGISTRY.md, ports 3100+ for frontend
 
    ## Your Past Experience
    - Common mistake to avoid: "Missing Zod validation"
@@ -497,7 +497,7 @@ F. CHECK FOR CHECKPOINT
    ```
    ## Fix Task (from gate diagnosis)
    **Failure Type**: server-startup-failure (priority 1)
-   **Report Line**: "❌ FAIL: API server started — Port 5101 not responding after 30s"
+   **Report Line**: "❌ FAIL: API server started — Port 5001 not responding after 30s"
 
    ### Common Causes
    - Missing environment variables
@@ -507,7 +507,7 @@ F. CHECK FOR CHECKPOINT
    ### Suggested Actions
    - Check server logs for the first error
    - Verify .env file exists with required variables
-   - Run `lsof -i :5101` to check port conflicts
+   - Run `lsof -i :5001` to check port conflicts
 
    Fix this issue and verify the server starts successfully.
    ```
