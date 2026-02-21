@@ -24,6 +24,27 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const body = submitSchema.parse(request.body);
+      const userId = request.currentUser!.id;
+
+      // BOLA (RISK-001): verify the entity being anchored belongs to the authenticated user
+      if (body.entityType === 'DID') {
+        const did = await fastify.prisma.dID.findFirst({ where: { id: body.entityId, userId } });
+        if (!did) {
+          throw new AppError(403, 'forbidden', 'DID does not belong to authenticated user');
+        }
+      } else if (body.entityType === 'CREDENTIAL' || body.entityType === 'REVOCATION') {
+        const userDids = await fastify.prisma.dID.findMany({ where: { userId }, select: { id: true } });
+        const didIds = userDids.map(d => d.id);
+        const credential = await fastify.prisma.credential.findFirst({
+          where: {
+            id: body.entityId,
+            OR: [{ holderDidId: { in: didIds } }, { issuerDidId: { in: didIds } }],
+          },
+        });
+        if (!credential) {
+          throw new AppError(403, 'forbidden', 'Credential does not belong to authenticated user');
+        }
+      }
 
       const anchor = await fastify.prisma.blockchainAnchor.create({
         data: {

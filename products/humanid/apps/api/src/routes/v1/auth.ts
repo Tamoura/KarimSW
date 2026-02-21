@@ -166,7 +166,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         // Increment failed attempts even for non-existent users (prevent enumeration)
         if (fastify.redis) {
           const attempts = await fastify.redis.incr(attemptsKey);
-          await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
+          // Only set TTL on first attempt to enforce a fixed window (not sliding)
+          if (attempts === 1) await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
           if (attempts >= MAX_LOGIN_ATTEMPTS) {
             await fastify.redis.set(lockoutKey, '1', 'EX', LOCKOUT_DURATION_SECONDS);
           }
@@ -184,7 +185,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         // Track failed login attempt
         if (fastify.redis) {
           const attempts = await fastify.redis.incr(attemptsKey);
-          await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
+          // Only set TTL on first attempt to enforce a fixed window (not sliding)
+          if (attempts === 1) await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
           if (attempts >= MAX_LOGIN_ATTEMPTS) {
             await fastify.redis.set(lockoutKey, '1', 'EX', LOCKOUT_DURATION_SECONDS);
             logger.warn('Account locked due to too many failed login attempts', { email: body.email });

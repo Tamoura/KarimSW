@@ -86,6 +86,9 @@ const ssoRoutes: FastifyPluginAsync = async (fastify) => {
 
       await requireOrgOwner(userId, body.orgId);
 
+      // SSRF protection: validate discoveryUrl does not point to private networks
+      await validateSsoUrl(body.discoveryUrl);
+
       const ssoConfig = {
         oidc: {
           discoveryUrl: body.discoveryUrl,
