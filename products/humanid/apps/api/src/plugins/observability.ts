@@ -5,16 +5,54 @@
  * - Request/response logging with correlation IDs
  * - Performance tracking (request duration)
  * - Error rate monitoring
+ * - Prometheus metrics via prom-client at GET /metrics (RISK-008)
  * - Correlation IDs via X-Request-ID header
  * - Sensitive data sanitization in logs
+ *
+ * Prometheus scraping makes metrics survive API restarts because the
+ * time-series data is stored externally in the Prometheus server.
  */
 
 import fp from 'fastify-plugin';
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'crypto';
+import {
+  Registry,
+  Counter,
+  Histogram,
+  collectDefaultMetrics,
+} from 'prom-client';
 import { logger } from '../utils/logger.js';
 
-// Circular buffer for O(1) duration tracking (replaces shift()-based array)
+// ---------------------------------------------------------------------------
+// Prometheus registry + metrics
+// ---------------------------------------------------------------------------
+
+// Use a dedicated registry (not the default global) so that multiple
+// buildApp() calls in tests don't double-register metrics.
+const promRegistry = new Registry();
+
+collectDefaultMetrics({ register: promRegistry, prefix: 'humanid_' });
+
+const httpRequestsTotal = new Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'status_code', 'route'] as const,
+  registers: [promRegistry],
+});
+
+const httpRequestDurationSeconds = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request duration in seconds',
+  labelNames: ['method', 'status_code', 'route'] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [promRegistry],
+});
+
+// ---------------------------------------------------------------------------
+// Legacy in-memory metrics (kept for /internal/metrics JSON endpoint)
+// ---------------------------------------------------------------------------
+
 class CircularBuffer {
   private data: number[];
   private index = 0;
@@ -34,65 +72,36 @@ class CircularBuffer {
   get length(): number { return this._size; }
 }
 
-// Metrics storage (in-memory; can be replaced with Prometheus/StatsD)
-interface Metrics {
-  requests: {
-    total: number;
-    byStatus: Record<number, number>;
-    byMethod: Record<string, number>;
-  };
-  errors: {
-    total: number;
-    byType: Record<string, number>;
-  };
-  performance: {
-    totalDuration: number;
-    requestCount: number;
-    durations: CircularBuffer;
-  };
+interface LegacyMetrics {
+  requests: { total: number; byStatus: Record<number, number>; byMethod: Record<string, number> };
+  errors: { total: number; byType: Record<string, number> };
+  performance: { totalDuration: number; requestCount: number; durations: CircularBuffer };
 }
 
-const metrics: Metrics = {
-  requests: {
-    total: 0,
-    byStatus: {},
-    byMethod: {},
-  },
-  errors: {
-    total: 0,
-    byType: {},
-  },
-  performance: {
-    totalDuration: 0,
-    requestCount: 0,
-    durations: new CircularBuffer(1000),
-  },
+const legacyMetrics: LegacyMetrics = {
+  requests: { total: 0, byStatus: {}, byMethod: {} },
+  errors: { total: 0, byType: {} },
+  performance: { totalDuration: 0, requestCount: 0, durations: new CircularBuffer(1000) },
 };
 
-/**
- * Track request metrics.
- */
-function trackMetrics(request: FastifyRequest, reply: FastifyReply, duration: number): void {
-  metrics.requests.total++;
-  metrics.requests.byStatus[reply.statusCode] =
-    (metrics.requests.byStatus[reply.statusCode] || 0) + 1;
-  metrics.requests.byMethod[request.method] =
-    (metrics.requests.byMethod[request.method] || 0) + 1;
+function trackLegacyMetrics(request: FastifyRequest, reply: FastifyReply, duration: number): void {
+  legacyMetrics.requests.total++;
+  legacyMetrics.requests.byStatus[reply.statusCode] =
+    (legacyMetrics.requests.byStatus[reply.statusCode] || 0) + 1;
+  legacyMetrics.requests.byMethod[request.method] =
+    (legacyMetrics.requests.byMethod[request.method] || 0) + 1;
 
   if (reply.statusCode >= 400) {
-    metrics.errors.total++;
+    legacyMetrics.errors.total++;
     const errorType = reply.statusCode >= 500 ? '5xx' : '4xx';
-    metrics.errors.byType[errorType] = (metrics.errors.byType[errorType] || 0) + 1;
+    legacyMetrics.errors.byType[errorType] = (legacyMetrics.errors.byType[errorType] || 0) + 1;
   }
 
-  metrics.performance.totalDuration += duration;
-  metrics.performance.requestCount++;
-  metrics.performance.durations.push(duration);
+  legacyMetrics.performance.totalDuration += duration;
+  legacyMetrics.performance.requestCount++;
+  legacyMetrics.performance.durations.push(duration);
 }
 
-/**
- * Calculate percentiles from array.
- */
 function calculatePercentile(buf: CircularBuffer, percentile: number): number {
   if (buf.length === 0) return 0;
   const sorted = buf.toArray().sort((a, b) => a - b);
@@ -100,17 +109,16 @@ function calculatePercentile(buf: CircularBuffer, percentile: number): number {
   return sorted[Math.max(0, index)];
 }
 
+// ---------------------------------------------------------------------------
+// Plugin
+// ---------------------------------------------------------------------------
+
 const observabilityPlugin: FastifyPluginAsync = async (fastify) => {
-  // Assign correlation ID (X-Request-ID) on every request
+  // Assign correlation ID on every request
   fastify.addHook('onRequest', async (request, reply) => {
-    // Use incoming X-Request-ID or generate a new one
     const requestId = (request.headers['x-request-id'] as string) || crypto.randomUUID();
     request.id = requestId;
-
-    // Set response header for correlation
     reply.header('x-request-id', requestId);
-
-    // Track request start time
     request.startTime = Date.now();
 
     logger.debug('Incoming request', {
@@ -122,11 +130,23 @@ const observabilityPlugin: FastifyPluginAsync = async (fastify) => {
     });
   });
 
-  // Response logging hook
+  // Response logging + metrics tracking
   fastify.addHook('onResponse', async (request, reply) => {
     const duration = Date.now() - (request.startTime || Date.now());
+    const durationSeconds = duration / 1000;
 
-    trackMetrics(request, reply, duration);
+    // Normalise route: use routeOptions.url when available to avoid high-cardinality
+    const route = (request.routeOptions as any)?.url ?? request.url ?? 'unknown';
+    const labels = {
+      method: request.method,
+      status_code: String(reply.statusCode),
+      route,
+    };
+
+    httpRequestsTotal.inc(labels);
+    httpRequestDurationSeconds.observe(labels, durationSeconds);
+
+    trackLegacyMetrics(request, reply, duration);
 
     const statusCode = reply.statusCode;
     const logData: Record<string, unknown> = {
@@ -151,7 +171,32 @@ const observabilityPlugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // Internal metrics endpoint
+  // ── GET /metrics — Prometheus scrape endpoint (RISK-008) ──────────────────
+  fastify.get('/metrics', async (request, reply) => {
+    const authHeader = request.headers.authorization;
+    const expectedKey = process.env.INTERNAL_API_KEY;
+
+    if (!expectedKey) {
+      return reply.code(500).send({ error: 'Metrics endpoint not configured' });
+    }
+
+    const expectedValue = `Bearer ${expectedKey}`;
+    const suppliedValue = authHeader || '';
+    const isValid =
+      suppliedValue.length === expectedValue.length &&
+      crypto.timingSafeEqual(Buffer.from(suppliedValue), Buffer.from(expectedValue));
+
+    if (!isValid) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const output = await promRegistry.metrics();
+    return reply
+      .header('Content-Type', promRegistry.contentType)
+      .send(output);
+  });
+
+  // ── GET /internal/metrics — Legacy JSON endpoint (kept for compatibility) ─
   fastify.get('/internal/metrics', async (request, reply) => {
     const authHeader = request.headers.authorization;
     const expectedKey = process.env.INTERNAL_API_KEY;
@@ -164,44 +209,37 @@ const observabilityPlugin: FastifyPluginAsync = async (fastify) => {
     const suppliedValue = authHeader || '';
     const isValid =
       suppliedValue.length === expectedValue.length &&
-      crypto.timingSafeEqual(
-        Buffer.from(suppliedValue),
-        Buffer.from(expectedValue),
-      );
+      crypto.timingSafeEqual(Buffer.from(suppliedValue), Buffer.from(expectedValue));
 
     if (!isValid) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const durationsBuf = metrics.performance.durations;
-    const p50 = calculatePercentile(durationsBuf, 50);
-    const p95 = calculatePercentile(durationsBuf, 95);
-    const p99 = calculatePercentile(durationsBuf, 99);
-
+    const buf = legacyMetrics.performance.durations;
     const avgDuration =
-      metrics.performance.requestCount > 0
-        ? metrics.performance.totalDuration / metrics.performance.requestCount
+      legacyMetrics.performance.requestCount > 0
+        ? legacyMetrics.performance.totalDuration / legacyMetrics.performance.requestCount
         : 0;
 
     return reply.send({
       requests: {
-        total: metrics.requests.total,
-        by_status: metrics.requests.byStatus,
-        by_method: metrics.requests.byMethod,
+        total: legacyMetrics.requests.total,
+        by_status: legacyMetrics.requests.byStatus,
+        by_method: legacyMetrics.requests.byMethod,
       },
       errors: {
-        total: metrics.errors.total,
+        total: legacyMetrics.errors.total,
         error_rate:
-          metrics.requests.total > 0
-            ? ((metrics.errors.total / metrics.requests.total) * 100).toFixed(2) + '%'
+          legacyMetrics.requests.total > 0
+            ? ((legacyMetrics.errors.total / legacyMetrics.requests.total) * 100).toFixed(2) + '%'
             : '0%',
-        by_type: metrics.errors.byType,
+        by_type: legacyMetrics.errors.byType,
       },
       performance: {
         avg_duration_ms: Math.round(avgDuration),
-        p50_ms: Math.round(p50),
-        p95_ms: Math.round(p95),
-        p99_ms: Math.round(p99),
+        p50_ms: Math.round(calculatePercentile(buf, 50)),
+        p95_ms: Math.round(calculatePercentile(buf, 95)),
+        p99_ms: Math.round(calculatePercentile(buf, 99)),
       },
       timestamp: new Date().toISOString(),
     });
