@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 interface Did {
   id: string;
@@ -62,16 +63,12 @@ export default function IssuerCredentialsPage() {
   const [issued, setIssued] = useState<IssuedCredential | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
 
     if (!token) {
       router.push("/login");
@@ -116,7 +113,7 @@ export default function IssuerCredentialsPage() {
     const validClaims = claims.filter((c) => c.key.trim() !== "");
     const claimsObj = Object.fromEntries(validClaims.map((c) => [c.key.trim(), c.value.trim()]));
 
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setSubmitting(true);

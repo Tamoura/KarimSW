@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type KeyEnvironment = "SANDBOX" | "PRODUCTION";
 type KeyStatus = "ACTIVE" | "REVOKED";
@@ -160,11 +161,7 @@ export default function ApiKeysPage() {
   const [rotating, setRotating] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -191,7 +188,7 @@ export default function ApiKeysPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
 
     fetchData(token)
@@ -201,7 +198,7 @@ export default function ApiKeysPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!newName.trim()) {
@@ -254,7 +251,7 @@ export default function ApiKeysPage() {
   }
 
   async function handleRevoke(id: string, name: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!window.confirm(`Revoke API key "${name}"? This cannot be undone.`)) return;
@@ -298,7 +295,7 @@ export default function ApiKeysPage() {
   }
 
   async function handleRotate(id: string, name: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!window.confirm(`Rotate API key "${name}"? The old key will be revoked immediately.`)) return;

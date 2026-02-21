@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type CredentialStatus = "OFFERED" | "ACTIVE" | "REVOKED" | "EXPIRED" | "SUSPENDED";
 
@@ -116,17 +117,13 @@ export default function CredentialDetailPage() {
   const [verifyError, setVerifyError] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
   useEffect(() => {
     if (!id) return;
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
 
     fetch(`${API_BASE}/wallet/credentials/${id}`, {
@@ -144,7 +141,7 @@ export default function CredentialDetailPage() {
   }, [id, router, handleUnauthorized]);
 
   async function handleVerify() {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setVerifying(true);

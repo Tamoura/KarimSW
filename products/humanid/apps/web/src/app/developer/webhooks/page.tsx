@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 const VALID_EVENTS = [
   "credential.issued",
@@ -151,12 +152,12 @@ function DeliveryLog({ webhookId }: { webhookId: string }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) return;
 
     fetch(`${API_BASE}/webhooks/${webhookId}/deliveries`, {
@@ -275,11 +276,7 @@ export default function WebhooksPage() {
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -296,15 +293,14 @@ export default function WebhooksPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
 
     if (!token) {
       router.push("/login");
       return;
     }
 
-    setEmail(storedEmail ?? "");
+    setEmail("");
 
     fetchWebhooks(token)
       .catch(() => setError("Could not load webhooks. Please try again."))
@@ -325,7 +321,7 @@ export default function WebhooksPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!newUrl.trim()) { setCreateError("Endpoint URL is required."); return; }
@@ -383,7 +379,7 @@ export default function WebhooksPage() {
   }
 
   async function handleTest(id: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setTesting(id);
@@ -417,7 +413,7 @@ export default function WebhooksPage() {
   }
 
   async function handleDelete(id: string, url: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!window.confirm(`Delete webhook for "${url}"? This cannot be undone.`)) return;
@@ -454,11 +450,7 @@ export default function WebhooksPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 

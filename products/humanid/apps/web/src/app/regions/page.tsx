@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type RegionHealth = "HEALTHY" | "DEGRADED" | "OFFLINE";
 
@@ -103,11 +104,7 @@ export default function RegionsPage() {
   const [cfgSuccess, setCfgSuccess] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -124,12 +121,11 @@ export default function RegionsPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
 
     if (!token) { router.push("/login"); return; }
 
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchRegions(token)
       .catch(() => setError("Could not load region data. Please try again."))
       .finally(() => setLoading(false));
@@ -137,7 +133,7 @@ export default function RegionsPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!regName.trim()) { setRegError("Region name is required."); return; }
@@ -192,7 +188,7 @@ export default function RegionsPage() {
     e.preventDefault();
     if (!selectedRegion) return;
 
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setCfgUpdating(true);
@@ -238,11 +234,7 @@ export default function RegionsPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 

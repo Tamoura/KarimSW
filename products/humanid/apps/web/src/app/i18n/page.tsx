@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 interface Locale {
   id: string;
@@ -184,11 +185,7 @@ export default function I18nPage() {
   const [translationsError, setTranslationsError] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -203,10 +200,9 @@ export default function I18nPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchLocales(token)
       .catch(() => setError("Could not load locales. Please try again."))
       .finally(() => setLoading(false));
@@ -214,7 +210,7 @@ export default function I18nPage() {
 
   async function handleAddLocale(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!addCode.trim()) { setAddError("Locale code is required."); return; }
     if (!addName.trim()) { setAddError("Name is required."); return; }
@@ -266,7 +262,7 @@ export default function I18nPage() {
 
   async function handleUpdateTranslations(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!updateLocale) { setUpdateError("Select a locale."); return; }
 
@@ -320,7 +316,7 @@ export default function I18nPage() {
 
   async function handleViewTranslations(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!viewLocale) { setTranslationsError("Select a locale."); return; }
 
@@ -356,11 +352,7 @@ export default function I18nPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 
