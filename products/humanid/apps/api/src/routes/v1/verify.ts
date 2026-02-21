@@ -241,10 +241,21 @@ const verifyRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
 
-      const requests = await fastify.prisma.verificationRequest.findMany({
-        where: { verifierId: request.currentUser!.id },
-        orderBy: { createdAt: 'desc' },
-      });
+      const query = request.query as { page?: string; limit?: string };
+      const page = Math.max(1, parseInt(query.page || '1') || 1);
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50') || 50, 100));
+      const skip = (page - 1) * limit;
+
+      const where = { verifierId: request.currentUser!.id };
+      const [requests, total] = await Promise.all([
+        fastify.prisma.verificationRequest.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.verificationRequest.count({ where }),
+      ]);
 
       return reply.send({
         requests: requests.map((r) => ({
@@ -256,7 +267,10 @@ const verifyRoutes: FastifyPluginAsync = async (fastify) => {
           createdAt: r.createdAt.toISOString(),
           respondedAt: r.respondedAt?.toISOString() || null,
         })),
-        total: requests.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) {

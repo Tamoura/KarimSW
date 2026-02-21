@@ -79,7 +79,7 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
-      const query = request.query as { chain?: string; status?: string; entityType?: string };
+      const query = request.query as { chain?: string; status?: string; entityType?: string; page?: string; limit?: string };
 
       // Get user's DID IDs to scope anchors to owned entities
       const userDids = await fastify.prisma.dID.findMany({
@@ -108,11 +108,19 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
       if (query.status) where.status = query.status;
       if (query.entityType) where.entityType = query.entityType;
 
-      const anchors = await fastify.prisma.blockchainAnchor.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-      });
+      const page = Math.max(1, parseInt(query.page || '1') || 1);
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50') || 50, 100));
+      const skip = (page - 1) * limit;
+
+      const [anchors, total] = await Promise.all([
+        fastify.prisma.blockchainAnchor.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.blockchainAnchor.count({ where }),
+      ]);
 
       return reply.send({
         anchors: anchors.map(a => ({
@@ -127,7 +135,10 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
           anchoredAt: a.anchoredAt?.toISOString() || null,
           createdAt: a.createdAt.toISOString(),
         })),
-        total: anchors.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());

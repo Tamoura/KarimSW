@@ -97,16 +97,27 @@ const templateRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
 
+      const query = request.query as { page?: string; limit?: string };
+      const page = Math.max(1, parseInt(query.page || '1') || 1);
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50') || 50, 100));
+
       const issuer = await getIssuerProfile(request.currentUser!.id);
 
       if (!issuer) {
-        return reply.send({ templates: [], total: 0 });
+        return reply.send({ templates: [], total: 0, page, pageSize: limit, totalPages: 0 });
       }
+      const skip = (page - 1) * limit;
 
-      const templates = await fastify.prisma.credentialTemplate.findMany({
-        where: { issuerId: issuer.id },
-        orderBy: { createdAt: 'desc' },
-      });
+      const where = { issuerId: issuer.id };
+      const [templates, total] = await Promise.all([
+        fastify.prisma.credentialTemplate.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.credentialTemplate.count({ where }),
+      ]);
 
       return reply.send({
         templates: templates.map((t) => ({
@@ -118,7 +129,10 @@ const templateRoutes: FastifyPluginAsync = async (fastify) => {
           createdAt: t.createdAt.toISOString(),
           updatedAt: t.updatedAt.toISOString(),
         })),
-        total: templates.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) {

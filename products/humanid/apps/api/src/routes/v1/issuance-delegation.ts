@@ -62,7 +62,7 @@ const issuanceDelegationRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
-      const query = request.query as { parentIssuerId?: string; delegateIssuerId?: string };
+      const query = request.query as { parentIssuerId?: string; delegateIssuerId?: string; page?: string; limit?: string };
 
       // Get the user's issuer IDs to scope delegations
       const userIssuers = await fastify.prisma.issuer.findMany({
@@ -81,10 +81,19 @@ const issuanceDelegationRoutes: FastifyPluginAsync = async (fastify) => {
       if (query.parentIssuerId) where.parentIssuerId = query.parentIssuerId;
       if (query.delegateIssuerId) where.delegateIssuerId = query.delegateIssuerId;
 
-      const delegations = await fastify.prisma.issuanceDelegation.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-      });
+      const page = Math.max(1, parseInt(query.page || '1') || 1);
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50') || 50, 100));
+      const skip = (page - 1) * limit;
+
+      const [delegations, total] = await Promise.all([
+        fastify.prisma.issuanceDelegation.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.issuanceDelegation.count({ where }),
+      ]);
 
       return reply.send({
         delegations: delegations.map(d => ({
@@ -96,7 +105,10 @@ const issuanceDelegationRoutes: FastifyPluginAsync = async (fastify) => {
           status: d.status,
           createdAt: d.createdAt.toISOString(),
         })),
-        total: delegations.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());

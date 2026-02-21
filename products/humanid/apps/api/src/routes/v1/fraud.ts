@@ -68,16 +68,25 @@ const fraudRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/alerts', async (request, reply) => {
     try {
       await requireAdmin(request);
-      const query = request.query as { status?: string; severity?: string };
+      const query = request.query as { status?: string; severity?: string; page?: string; limit?: string };
+
+      const page = Math.max(1, parseInt(query.page || '1') || 1);
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50') || 50, 100));
+      const skip = (page - 1) * limit;
 
       const where: Record<string, unknown> = {};
       if (query.status) where.status = query.status;
       if (query.severity) where.severity = query.severity;
 
-      const alerts = await fastify.prisma.fraudAlert.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-      });
+      const [alerts, total] = await Promise.all([
+        fastify.prisma.fraudAlert.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        fastify.prisma.fraudAlert.count({ where }),
+      ]);
 
       return reply.send({
         alerts: alerts.map(a => ({
@@ -91,7 +100,10 @@ const fraudRoutes: FastifyPluginAsync = async (fastify) => {
           assignee: a.assignee,
           createdAt: a.createdAt.toISOString(),
         })),
-        total: alerts.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
