@@ -309,11 +309,11 @@ Content-Type: application/json
   "claims": {
     "fullName": "Jane Smith",
     "degreeTitle": "Bachelor of Computer Science",
-    "institution": "National University of Dubai",
-    "graduationDate": "2024-06-15",
+    "institution": "University of Toronto",
+    "graduationDate": "2025-06-15",
     "honours": "First Class"
   },
-  "expiresAt": "2034-06-15T00:00:00Z"
+  "expiresAt": "2035-06-15T00:00:00Z"
 }
 
 // Response:
@@ -321,7 +321,7 @@ Content-Type: application/json
   "id": "cred_01J9X...",
   "status": "issued",
   "holderDid": "did:key:z6Mk...",
-  "issuedAt": "2024-06-16T09:00:00Z",
+  "issuedAt": "2026-01-16T09:00:00Z",
   "verificationUrl": "https://humanid.app/verify/cred_01J9X..."
 }`}</CodeBlock>
             <SubHeading>Bulk issuance</SubHeading>
@@ -449,12 +449,12 @@ https://humanid.app/saml/sso
 {
   "id": "evt_01J9X...",
   "type": "credential.issued",
-  "timestamp": "2024-06-16T09:00:00Z",
+  "timestamp": "2026-01-16T09:00:00Z",
   "data": {
     "credentialId": "cred_01J9X...",
     "holderDid": "did:key:z6Mk...",
     "templateId": "tmpl_university_degree_v1",
-    "issuedAt": "2024-06-16T09:00:00Z"
+    "issuedAt": "2026-01-16T09:00:00Z"
   }
 }
 

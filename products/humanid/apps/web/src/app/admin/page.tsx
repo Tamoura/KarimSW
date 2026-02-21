@@ -30,15 +30,15 @@ const mockStats: PlatformStats = {
 
 const mockAuditLog: AuditEntry[] = [
   { id: "1", timestamp: new Date().toISOString(), actor: "alice@example.com", action: "LOGIN", resource: "auth", ip: "192.168.1.1" },
-  { id: "2", timestamp: new Date(Date.now() - 60000).toISOString(), actor: "issuer@nud.ac.ae", action: "CREDENTIAL_ISSUED", resource: "credential:abc123", ip: "10.0.0.5" },
-  { id: "3", timestamp: new Date(Date.now() - 120000).toISOString(), actor: "admin@humanid.io", action: "ISSUER_APPROVED", resource: "issuer:dha-gov-ae", ip: "10.0.0.1" },
-  { id: "4", timestamp: new Date(Date.now() - 300000).toISOString(), actor: "bob@company.ae", action: "DID_CREATED", resource: "did:web:company.ae", ip: "172.16.0.42" },
+  { id: "2", timestamp: new Date(Date.now() - 60000).toISOString(), actor: "issuer@utoronto.ca", action: "CREDENTIAL_ISSUED", resource: "credential:abc123", ip: "10.0.0.5" },
+  { id: "3", timestamp: new Date(Date.now() - 120000).toISOString(), actor: "admin@humanid.io", action: "ISSUER_APPROVED", resource: "issuer:nhs-digital", ip: "10.0.0.1" },
+  { id: "4", timestamp: new Date(Date.now() - 300000).toISOString(), actor: "bob@company.de", action: "DID_CREATED", resource: "did:web:company.de", ip: "172.16.0.42" },
   { id: "5", timestamp: new Date(Date.now() - 600000).toISOString(), actor: "charlie@test.com", action: "CREDENTIAL_REVOKED", resource: "credential:xyz789", ip: "192.168.2.20" },
   { id: "6", timestamp: new Date(Date.now() - 900000).toISOString(), actor: "issuer@globalfinance.com", action: "ISSUER_SUSPENDED", resource: "issuer:globalfinance", ip: "10.0.1.88" },
-  { id: "7", timestamp: new Date(Date.now() - 1200000).toISOString(), actor: "diana@example.ae", action: "LOGIN", resource: "auth", ip: "192.168.3.5" },
+  { id: "7", timestamp: new Date(Date.now() - 1200000).toISOString(), actor: "diana@example.fr", action: "LOGIN", resource: "auth", ip: "192.168.3.5" },
   { id: "8", timestamp: new Date(Date.now() - 1500000).toISOString(), actor: "admin@humanid.io", action: "USER_SUSPENDED", resource: "user:charlie-test", ip: "10.0.0.1" },
   { id: "9", timestamp: new Date(Date.now() - 1800000).toISOString(), actor: "eve@startup.io", action: "DID_CREATED", resource: "did:key:z6Mk...", ip: "203.0.113.7" },
-  { id: "10", timestamp: new Date(Date.now() - 2100000).toISOString(), actor: "issuer@nud.ac.ae", action: "CREDENTIAL_ISSUED", resource: "credential:stu456", ip: "10.0.0.5" },
+  { id: "10", timestamp: new Date(Date.now() - 2100000).toISOString(), actor: "issuer@utoronto.ca", action: "CREDENTIAL_ISSUED", resource: "credential:stu456", ip: "10.0.0.5" },
 ];
 
 function formatTimestamp(iso: string): string {

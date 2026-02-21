@@ -19,11 +19,11 @@ interface Issuer {
 }
 
 const mockIssuers: Issuer[] = [
-  { id: "1", name: "National University of Dubai", did: "did:web:nud.ac.ae", trustLevel: "government-backed", status: "active", credentialCount: 4521 },
-  { id: "2", name: "Dubai Health Authority", did: "did:web:dha.gov.ae", trustLevel: "verified", status: "active", credentialCount: 892 },
+  { id: "1", name: "University of Toronto", did: "did:web:utoronto.ca", trustLevel: "government-backed", status: "active", credentialCount: 4521 },
+  { id: "2", name: "NHS Digital", did: "did:web:digital.nhs.uk", trustLevel: "verified", status: "active", credentialCount: 892 },
   { id: "3", name: "TechCorp LLC", did: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK", trustLevel: "self-asserted", status: "pending", credentialCount: 0 },
   { id: "4", name: "Global Finance Inc", did: "did:web:globalfinance.com", trustLevel: "verified", status: "suspended", credentialCount: 120 },
-  { id: "5", name: "Abu Dhabi Police", did: "did:web:adp.gov.ae", trustLevel: "government-backed", status: "active", credentialCount: 12087 },
+  { id: "5", name: "Bundespolizei", did: "did:web:bundespolizei.de", trustLevel: "government-backed", status: "active", credentialCount: 12087 },
   { id: "6", name: "StartupXYZ", did: "did:key:z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6x65JVpM", trustLevel: "self-asserted", status: "pending", credentialCount: 0 },
 ];
 
