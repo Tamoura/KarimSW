@@ -5,7 +5,7 @@ services:
   - type: web
     name: humanid-api
     runtime: node
-    plan: free
+    plan: starter
     rootDir: products/humanid/apps/api
     buildCommand: npm ci && npx prisma generate && npx tsc
     startCommand: npx prisma migrate deploy && node dist/index.js
@@ -34,6 +34,6 @@ services:
 
 databases:
   - name: humanid-db
-    plan: free
+    plan: starter
     databaseName: humanid_prod
     user: humanid
