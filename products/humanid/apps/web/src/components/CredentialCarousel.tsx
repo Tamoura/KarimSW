@@ -105,22 +105,28 @@ const credentials = [
 
 export default function CredentialCarousel() {
   const [active, setActive] = useState(0);
-  const [animating, setAnimating] = useState(false);
+  const [fading, setFading] = useState(false);
 
-  // Auto-advance every 3.5 s
+  // Auto-advance every 3.5 s.
+  // Uses the functional updater (prev => ...) so the interval never captures
+  // a stale `active` value — React always supplies the current state.
   useEffect(() => {
     const timer = setInterval(() => {
-      goTo((prev) => (prev + 1) % credentials.length);
+      setFading(true);
+      setTimeout(() => {
+        setActive((prev) => (prev + 1) % credentials.length);
+        setFading(false);
+      }, 250);
     }, 3500);
     return () => clearInterval(timer);
   }, []);
 
-  function goTo(indexOrUpdater: number | ((prev: number) => number)) {
-    if (animating) return;
-    setAnimating(true);
+  function handleDotClick(i: number) {
+    if (i === active) return;
+    setFading(true);
     setTimeout(() => {
-      setActive(typeof indexOrUpdater === "function" ? indexOrUpdater(active) : indexOrUpdater);
-      setAnimating(false);
+      setActive(i);
+      setFading(false);
     }, 250);
   }
 
