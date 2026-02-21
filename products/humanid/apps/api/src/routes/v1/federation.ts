@@ -12,16 +12,16 @@ import { AppError } from '../../types/index.js';
 const createLinkSchema = z.object({
   didId: z.string().uuid(),
   protocol: z.enum(['SAML', 'OIDC', 'DID_VC']),
-  externalIssuer: z.string().min(1),
-  externalSubject: z.string().min(1),
+  externalIssuer: z.string().min(1).max(1000),
+  externalSubject: z.string().min(1).max(1000),
   direction: z.enum(['IMPORT', 'EXPORT', 'BIDIRECTIONAL']).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
 const resolveSchema = z.object({
   protocol: z.enum(['SAML', 'OIDC', 'DID_VC']),
-  externalIssuer: z.string().min(1),
-  externalSubject: z.string().min(1),
+  externalIssuer: z.string().min(1).max(1000),
+  externalSubject: z.string().min(1).max(1000),
 });
 
 const federationRoutes: FastifyPluginAsync = async (fastify) => {

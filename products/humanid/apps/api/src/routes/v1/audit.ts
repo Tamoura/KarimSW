@@ -128,9 +128,17 @@ const auditRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (format === 'csv') {
+        // Escape CSV values: replace commas and protect against formula injection
+        const escapeCsv = (s: string | null | undefined): string => {
+          if (!s) return '';
+          const cleaned = s.replace(/,/g, ';');
+          // Prevent CSV formula injection (=, +, -, @, tab, carriage return)
+          if (/^[=+\-@\t\r]/.test(cleaned)) return `'${cleaned}`;
+          return cleaned;
+        };
         const header = 'id,userId,action,entityType,entityId,ipAddress,userAgent,createdAt';
         const rows = events.map((e) =>
-          `${e.id},${e.userId || ''},${e.action},${e.entityType},${e.entityId},${e.ipAddress || ''},${(e.userAgent || '').replace(/,/g, ';')},${e.createdAt.toISOString()}`
+          `${e.id},${e.userId || ''},${escapeCsv(e.action)},${escapeCsv(e.entityType)},${escapeCsv(e.entityId)},${escapeCsv(e.ipAddress)},${escapeCsv(e.userAgent)},${e.createdAt.toISOString()}`
         );
         const csv = [header, ...rows].join('\n');
 

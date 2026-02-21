@@ -10,13 +10,13 @@ import { z } from 'zod';
 import { AppError } from '../../types/index.js';
 
 const createLocaleSchema = z.object({
-  code: z.string().min(2).max(10),
+  code: z.string().min(2).max(10).regex(/^[a-z]{2}(-[A-Z]{2})?(-[a-z]+)?$/, 'Invalid locale code format (e.g., en, en-US, en-US-variant)'),
   name: z.string().min(1),
   nativeName: z.string().min(1),
 });
 
 const updateTranslationsSchema = z.object({
-  locale: z.string().min(2).max(10),
+  locale: z.string().min(2).max(10).regex(/^[a-z]{2}(-[A-Z]{2})?(-[a-z]+)?$/, 'Invalid locale code format'),
   translations: z.record(z.string()),
 });
 
