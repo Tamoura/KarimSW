@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type DelegationStatus = "ACTIVE" | "REVOKED" | "EXPIRED";
 
@@ -106,11 +107,7 @@ export default function DelegatedIssuancePage() {
   const [revokeSuccess, setRevokeSuccess] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -125,10 +122,9 @@ export default function DelegatedIssuancePage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchDelegations(token)
       .catch(() => setError("Could not load delegations. Please try again."))
       .finally(() => setLoading(false));
@@ -136,7 +132,7 @@ export default function DelegatedIssuancePage() {
 
   async function handleGrant(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!grantDelegateId.trim()) { setGrantError("Delegate ID is required."); return; }
     if (!grantCredentialTypes.trim()) { setGrantError("At least one credential type is required."); return; }
@@ -204,7 +200,7 @@ export default function DelegatedIssuancePage() {
 
   async function handleVerifyChain(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!verifyDelegateId.trim()) { setChainError("Delegate ID is required."); return; }
 
@@ -239,7 +235,7 @@ export default function DelegatedIssuancePage() {
   }
 
   async function handleRevoke(id: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setRevokingId(id);
@@ -276,11 +272,7 @@ export default function DelegatedIssuancePage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 

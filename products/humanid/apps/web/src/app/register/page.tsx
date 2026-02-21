@@ -3,8 +3,7 @@
 import { useState, type FormEvent, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-
-const API_BASE = "http://localhost:5013/api/v1";
+import { setAccessToken, apiFetch } from "@/lib/api-client";
 
 type Role = "HOLDER" | "ISSUER" | "DEVELOPER";
 
@@ -107,9 +106,8 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/register`, {
+      const res = await apiFetch("/auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password, role }),
       });
 
@@ -120,13 +118,9 @@ export default function RegisterPage() {
         return;
       }
 
-      // If the API returns tokens on register, store them. Otherwise redirect to verify-email.
+      // If the API returns tokens on register, store access token in memory — no localStorage (RISK-026)
       if (data.access_token) {
-        localStorage.setItem("access_token", data.access_token);
-        localStorage.setItem("refresh_token", data.refresh_token ?? "");
-        localStorage.setItem("user_id", data.id ?? "");
-        localStorage.setItem("user_email", data.email ?? email);
-        localStorage.setItem("user_role", data.role ?? role);
+        setAccessToken(data.access_token);
         router.push("/wallet");
       } else {
         router.push(`/verify-email?email=${encodeURIComponent(email.trim().toLowerCase())}`);

@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type AgentStatus = "ACTIVE" | "SUSPENDED" | "REVOKED";
 
@@ -121,11 +122,7 @@ export default function AgentsPage() {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -160,12 +157,11 @@ export default function AgentsPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
 
     if (!token) { router.push("/login"); return; }
 
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchAgents(token)
       .catch(() => setError("Could not load agent data. Please try again."))
       .finally(() => setLoading(false));
@@ -182,13 +178,13 @@ export default function AgentsPage() {
     setVerifySuccess(null);
     setVerifyError(null);
 
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (token) fetchDelegations(token, agent.id);
   }
 
   async function handleRegisterAgent(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!agentName.trim()) { setRegError("Agent name is required."); return; }
@@ -244,7 +240,7 @@ export default function AgentsPage() {
     e.preventDefault();
     if (!selectedAgent) return;
 
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!delPermissions.trim()) { setDelError("Permissions are required."); return; }
@@ -296,7 +292,7 @@ export default function AgentsPage() {
   }
 
   async function handleVerifyProof(agentId: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setVerifying(agentId);
@@ -330,7 +326,7 @@ export default function AgentsPage() {
   }
 
   async function handleAgentAction(agentId: string, action: "suspend" | "revoke") {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!window.confirm(`${action === "suspend" ? "Suspend" : "Revoke"} this agent?`)) return;
@@ -371,11 +367,7 @@ export default function AgentsPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 

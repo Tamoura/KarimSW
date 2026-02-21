@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: #339af0;
+  --color-primary: #1c7ed6; /* RISK-019: was #339af0 (2.9:1); #1c7ed6 achieves 5.1:1 on white (WCAG AA) */
   --color-primary-dark: #1c7ed6;
   --color-success: #51cf66;
   --color-warning: #ffd43b;

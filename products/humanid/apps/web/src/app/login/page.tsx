@@ -3,8 +3,7 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-
-const API_BASE = "http://localhost:5013/api/v1";
+import { setAccessToken, apiFetch } from "@/lib/api-client";
 
 interface ApiError {
   type?: string;
@@ -33,9 +32,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const res = await apiFetch("/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
 
@@ -46,11 +44,8 @@ export default function LoginPage() {
         return;
       }
 
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("refresh_token", data.refresh_token);
-      localStorage.setItem("user_id", data.id);
-      localStorage.setItem("user_email", data.email);
-      localStorage.setItem("user_role", data.role);
+      // Store access token in memory only — no localStorage (RISK-026)
+      setAccessToken(data.access_token);
 
       router.push("/wallet");
     } catch {

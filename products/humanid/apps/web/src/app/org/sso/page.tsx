@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type SSOProtocol = "OIDC" | "SAML";
 
@@ -100,11 +101,7 @@ export default function SSOPage() {
   const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -121,8 +118,7 @@ export default function SSOPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
     const orgId = localStorage.getItem("org_id");
 
     if (!token) {
@@ -130,7 +126,7 @@ export default function SSOPage() {
       return;
     }
 
-    setEmail(storedEmail ?? "");
+    setEmail("");
 
     if (orgId) {
       fetchProviders(token, orgId)
@@ -143,7 +139,7 @@ export default function SSOPage() {
 
   async function handleOidcSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     const orgId = localStorage.getItem("org_id");
     if (!token) { handleUnauthorized(); return; }
 
@@ -202,7 +198,7 @@ export default function SSOPage() {
 
   async function handleSamlSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     const orgId = localStorage.getItem("org_id");
     if (!token) { handleUnauthorized(); return; }
 
@@ -257,7 +253,7 @@ export default function SSOPage() {
   }
 
   async function handleRemove(protocol: SSOProtocol) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     const orgId = localStorage.getItem("org_id");
     if (!token || !orgId) return;
 
@@ -296,11 +292,7 @@ export default function SSOPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 
