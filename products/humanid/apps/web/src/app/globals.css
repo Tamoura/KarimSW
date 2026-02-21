@@ -39,7 +39,7 @@
     box-sizing: border-box;
   }
 
-  a {
+  a:not([class*="btn-"]) {
     @apply text-primary-500 hover:text-primary-600 transition-colors;
   }
 }
