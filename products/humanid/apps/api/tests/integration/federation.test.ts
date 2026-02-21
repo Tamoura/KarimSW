@@ -146,7 +146,7 @@ describe('Identity Federation - /api/v1/federation', () => {
       const body = res.json();
       expect(body).toHaveProperty('found', true);
       expect(body).toHaveProperty('didId');
-      expect(body).toHaveProperty('userId');
+      expect(body).not.toHaveProperty('userId');
     });
   });
 

@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { randomBytes, createHmac } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
+import { encrypt, decrypt } from '../../utils/encryption.js';
 
 const VALID_EVENTS = [
   'credential.issued',
@@ -86,12 +87,13 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const secret = `whsec_${randomBytes(24).toString('hex')}`;
+      const encryptedSecret = encrypt(secret);
 
       const webhook = await fastify.prisma.webhook.create({
         data: {
           userId,
           url: body.url,
-          secret,
+          secret: encryptedSecret,
           events: body.events,
           status: 'ACTIVE',
           description: body.description,
@@ -244,7 +246,8 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
       let responseBody: string | null = null;
 
       try {
-        const signature = createHmac('sha256', webhook.secret)
+        const rawSecret = decrypt(webhook.secret);
+        const signature = createHmac('sha256', rawSecret)
           .update(JSON.stringify(testPayload))
           .digest('hex');
 

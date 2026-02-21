@@ -11,7 +11,8 @@ import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { generateApiKey, hashApiKey, getApiKeyPrefix } from '../../utils/crypto.js';
 import { createHash } from 'crypto';
-import { encryptPrivateKey, encryptClaims } from '../../utils/encryption.js';
+import { encryptPrivateKey, encryptClaims, reEncrypt } from '../../utils/encryption.js';
+import { buildRequireAdmin } from '../../utils/middleware.js';
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
@@ -22,7 +23,13 @@ const createKeySchema = z.object({
   }).optional(),
 });
 
+const keyRotationSchema = z.object({
+  oldKeyHex: z.string().length(64, 'Key must be 64-char hex (32 bytes)'),
+  newKeyHex: z.string().length(64, 'Key must be 64-char hex (32 bytes)'),
+});
+
 const developerRoutes: FastifyPluginAsync = async (fastify) => {
+  const requireAdmin = buildRequireAdmin(fastify);
   // POST /api/v1/developer/keys - Create API key
   fastify.post('/keys', async (request, reply) => {
     try {
@@ -87,21 +94,32 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
 
-      const keys = await fastify.prisma.apiKey.findMany({
-        where: { userId: request.currentUser!.id },
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          keyPrefix: true,
-          name: true,
-          environment: true,
-          status: true,
-          permissions: true,
-          rateLimit: true,
-          lastUsedAt: true,
-          createdAt: true,
-        },
-      });
+      const query = request.query as { page?: string; limit?: string };
+      const page = parseInt(query.page || '1');
+      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const skip = (page - 1) * limit;
+
+      const where = { userId: request.currentUser!.id };
+      const [keys, total] = await Promise.all([
+        fastify.prisma.apiKey.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            keyPrefix: true,
+            name: true,
+            environment: true,
+            status: true,
+            permissions: true,
+            rateLimit: true,
+            lastUsedAt: true,
+            createdAt: true,
+          },
+        }),
+        fastify.prisma.apiKey.count({ where }),
+      ]);
 
       return reply.send({
         keys: keys.map((k) => ({
@@ -109,7 +127,10 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
           lastUsedAt: k.lastUsedAt?.toISOString() || null,
           createdAt: k.createdAt.toISOString(),
         })),
-        total: keys.length,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
       });
     } catch (error) {
       if (error instanceof AppError) {
@@ -370,6 +391,85 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) {
         return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+
+  // ==================== Encryption Key Rotation ====================
+
+  // POST /api/v1/developer/rotate-encryption-key - Re-encrypt all data with new key (admin only)
+  fastify.post('/rotate-encryption-key', async (request, reply) => {
+    try {
+      await requireAdmin(request);
+      const body = keyRotationSchema.parse(request.body);
+
+      let credentialsMigrated = 0;
+      let didsMigrated = 0;
+      let webhooksMigrated = 0;
+
+      // Re-encrypt credential claims
+      const credentials = await fastify.prisma.credential.findMany({
+        select: { id: true, encryptedClaims: true },
+      });
+      for (const cred of credentials) {
+        if (!cred.encryptedClaims) continue;
+        const reEncrypted = reEncrypt(cred.encryptedClaims, body.oldKeyHex, body.newKeyHex);
+        await fastify.prisma.credential.update({
+          where: { id: cred.id },
+          data: { encryptedClaims: reEncrypted },
+        });
+        credentialsMigrated++;
+      }
+
+      // Re-encrypt DID private keys
+      const dids = await fastify.prisma.dID.findMany({
+        select: { id: true, encryptedPrivateKey: true },
+      });
+      for (const did of dids) {
+        if (!did.encryptedPrivateKey) continue;
+        const reEncrypted = reEncrypt(did.encryptedPrivateKey, body.oldKeyHex, body.newKeyHex);
+        await fastify.prisma.dID.update({
+          where: { id: did.id },
+          data: { encryptedPrivateKey: reEncrypted },
+        });
+        didsMigrated++;
+      }
+
+      // Re-encrypt webhook secrets (only those in iv:tag:data format)
+      const webhooks = await fastify.prisma.webhook.findMany({
+        select: { id: true, secret: true },
+      });
+      for (const wh of webhooks) {
+        if (!wh.secret || !wh.secret.includes(':')) continue;
+        try {
+          const reEncrypted = reEncrypt(wh.secret, body.oldKeyHex, body.newKeyHex);
+          await fastify.prisma.webhook.update({
+            where: { id: wh.id },
+            data: { secret: reEncrypted },
+          });
+          webhooksMigrated++;
+        } catch {
+          // Skip non-encrypted secrets (plaintext legacy values)
+        }
+      }
+
+      logger.info('Encryption key rotation complete', {
+        credentialsMigrated,
+        didsMigrated,
+        webhooksMigrated,
+      });
+
+      return reply.send({
+        message: 'Encryption key rotation complete. Update CLAIMS_ENCRYPTION_KEY env var to the new key.',
+        credentialsMigrated,
+        didsMigrated,
+        webhooksMigrated,
+      });
+    } catch (error) {
+      if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ type: 'https://humanid.dev/errors/validation-error', title: 'Validation Error', status: 400, detail: error.errors.map(e => e.message).join('; '), request_id: request.id });
       }
       throw error;
     }

@@ -108,3 +108,35 @@ export function timingSafeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 }
+
+/**
+ * Re-encrypt a value from an old key to a new key.
+ * Used during encryption key rotation to migrate encrypted data.
+ *
+ * @param encryptedStr - The encrypted string (iv:authTag:ciphertext format)
+ * @param oldKeyHex - The old 64-char hex encryption key
+ * @param newKeyHex - The new 64-char hex encryption key
+ * @returns The re-encrypted string under the new key
+ */
+export function reEncrypt(encryptedStr: string, oldKeyHex: string, newKeyHex: string): string {
+  const oldKey = Buffer.from(oldKeyHex, 'hex');
+  const newKey = Buffer.from(newKeyHex, 'hex');
+
+  // Decrypt with old key
+  const [ivB64, tagB64, dataB64] = encryptedStr.split(':');
+  const iv = Buffer.from(ivB64, 'base64');
+  const authTag = Buffer.from(tagB64, 'base64');
+  const encrypted = Buffer.from(dataB64, 'base64');
+
+  const decipher = createDecipheriv('aes-256-gcm', oldKey, iv);
+  decipher.setAuthTag(authTag);
+  const plaintext = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+
+  // Re-encrypt with new key
+  const newIv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', newKey, newIv);
+  const reEncrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const newAuthTag = cipher.getAuthTag();
+
+  return `${newIv.toString('base64')}:${newAuthTag.toString('base64')}:${reEncrypted.toString('base64')}`;
+}
