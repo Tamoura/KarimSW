@@ -62,7 +62,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col fixed inset-y-0 overflow-y-auto">
         <div className="p-4 border-b border-gray-800">
-          <h1 className="text-lg font-bold text-white tracking-tight">ConnectSW</h1>
+          <h1 className="text-lg font-bold text-white tracking-tight">KarimSW</h1>
           <p className="text-xs text-gray-500 mt-0.5">Command Center</p>
         </div>
         <nav className="flex-1 p-2">
