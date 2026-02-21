@@ -36,7 +36,8 @@ const revokeSchema = z.object({
 
 const credentialRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/credentials - Issue a credential
-  fastify.post('/', async (request, reply) => {
+  // Rate limited: 50 per minute per key (IP or user) to prevent credential spam (RISK-006)
+  fastify.post('/', { config: { rateLimit: { max: 50, timeWindow: '1 minute' } } }, async (request, reply) => {
     try {
       await fastify.authenticate(request);
 

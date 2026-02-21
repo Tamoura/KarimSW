@@ -26,7 +26,8 @@ const resolveSchema = z.object({
 
 const federationRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/federation/links - Create federation link
-  fastify.post('/links', async (request, reply) => {
+  // Rate limited: 50 per hour per key (IP or user) to prevent abuse (RISK-006)
+  fastify.post('/links', { config: { rateLimit: { max: 50, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;

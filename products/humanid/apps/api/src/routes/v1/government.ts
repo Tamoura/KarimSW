@@ -3,18 +3,14 @@
  *
  * Partnership applications, credential scheme registration for
  * government ID programs, and bulk issuance support.
- * Uses in-memory storage for partnership/scheme data (no dedicated DB tables).
+ *
+ * Data is persisted in PostgreSQL via Prisma (RISK-001 remediation).
  */
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { randomUUID } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { buildRequireAdmin } from '../../utils/middleware.js';
-
-// In-memory stores (would be DB tables in production)
-const partnerships: Array<Record<string, unknown>> = [];
-const credentialSchemes: Array<Record<string, unknown>> = [];
 
 const applySchema = z.object({
   governmentEntity: z.string().min(1),
@@ -42,14 +38,17 @@ const governmentRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const body = applySchema.parse(request.body);
 
-      const partnership = {
-        id: randomUUID(),
-        ...body,
-        status: 'PENDING',
-        appliedBy: request.currentUser!.id,
-        createdAt: new Date().toISOString(),
-      };
-      partnerships.push(partnership);
+      const partnership = await fastify.prisma.governmentPartnership.create({
+        data: {
+          governmentEntity: body.governmentEntity,
+          country: body.country,
+          contactName: body.contactName,
+          contactEmail: body.contactEmail,
+          programDescription: body.programDescription,
+          estimatedVolume: body.estimatedVolume,
+          appliedBy: request.currentUser!.id,
+        },
+      });
 
       return reply.code(201).send(partnership);
     } catch (error) {
@@ -65,6 +64,10 @@ const governmentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/partnerships', async (request, reply) => {
     try {
       await requireAdmin(request);
+
+      const partnerships = await fastify.prisma.governmentPartnership.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
 
       return reply.send({
         partnerships,
@@ -82,13 +85,16 @@ const governmentRoutes: FastifyPluginAsync = async (fastify) => {
       await requireAdmin(request);
       const body = schemeSchema.parse(request.body);
 
-      const scheme = {
-        id: randomUUID(),
-        ...body,
-        status: 'ACTIVE',
-        createdAt: new Date().toISOString(),
-      };
-      credentialSchemes.push(scheme);
+      const scheme = await fastify.prisma.governmentCredentialScheme.create({
+        data: {
+          name: body.name,
+          country: body.country,
+          credentialType: body.credentialType,
+          schema: body.schema as unknown as import('@prisma/client').Prisma.InputJsonValue,
+          requiredAttributes: body.requiredAttributes,
+          createdBy: request.currentUser!.id,
+        },
+      });
 
       return reply.code(201).send(scheme);
     } catch (error) {
@@ -105,9 +111,13 @@ const governmentRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await requireAdmin(request);
 
+      const schemes = await fastify.prisma.governmentCredentialScheme.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+
       return reply.send({
-        schemes: credentialSchemes,
-        total: credentialSchemes.length,
+        schemes,
+        total: schemes.length,
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());

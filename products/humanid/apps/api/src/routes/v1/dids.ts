@@ -33,7 +33,8 @@ const updateDidSchema = z.object({
 
 const didRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/dids - Create a new DID
-  fastify.post('/', async (request, reply) => {
+  // Rate limited: 20 per hour per key (IP or user) to prevent DID creation abuse (RISK-006)
+  fastify.post('/', { config: { rateLimit: { max: 20, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
       await fastify.authenticate(request);
 

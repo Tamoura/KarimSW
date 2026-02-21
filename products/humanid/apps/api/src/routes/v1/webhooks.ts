@@ -112,7 +112,8 @@ async function validateWebhookUrl(url: string): Promise<void> {
 
 const webhookRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/webhooks - Create webhook
-  fastify.post('/', async (request, reply) => {
+  // Rate limited: 20 per hour per user to prevent webhook spam (RISK-006)
+  fastify.post('/', { config: { rateLimit: { max: 20, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
       await fastify.authenticate(request);
       const body = createWebhookSchema.parse(request.body);

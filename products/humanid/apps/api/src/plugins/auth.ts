@@ -36,10 +36,18 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
       // Try JWT first (for user sessions)
       try {
         const decoded = await request.jwtVerify();
-        const { userId: decodedUserId } = decoded as { userId?: string };
+        const { userId: decodedUserId, jti } = decoded as { userId?: string; jti?: string };
 
         if (!decodedUserId || typeof decodedUserId !== 'string') {
           throw new AppError(401, 'unauthorized', 'Invalid token payload');
+        }
+
+        // Check JWT revocation blocklist (RISK-002)
+        if (jti && fastify.redis) {
+          const isRevoked = await fastify.redis.exists(`revoked:jwt:${jti}`);
+          if (isRevoked) {
+            throw new AppError(401, 'unauthorized', 'Token has been revoked');
+          }
         }
 
         const user = await fastify.prisma.user.findUnique({
