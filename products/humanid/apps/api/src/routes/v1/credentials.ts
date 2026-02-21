@@ -12,7 +12,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { buildEd25519Proof, deserializePrivateKey } from '../../utils/did-crypto.js';

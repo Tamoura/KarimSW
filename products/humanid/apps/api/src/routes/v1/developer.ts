@@ -404,9 +404,16 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
       await requireAdmin(request);
       const body = keyRotationSchema.parse(request.body);
 
+      // Validate old key matches current environment key
+      const currentKey = process.env.CLAIMS_ENCRYPTION_KEY;
+      if (!currentKey || currentKey !== body.oldKeyHex) {
+        throw new AppError(400, 'bad-request', 'Provided old key does not match current CLAIMS_ENCRYPTION_KEY');
+      }
+
       let credentialsMigrated = 0;
       let didsMigrated = 0;
       let webhooksMigrated = 0;
+      let skipped = 0;
 
       // Re-encrypt credential claims
       const credentials = await fastify.prisma.credential.findMany({
@@ -414,12 +421,16 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
       });
       for (const cred of credentials) {
         if (!cred.encryptedClaims) continue;
-        const reEncrypted = reEncrypt(cred.encryptedClaims, body.oldKeyHex, body.newKeyHex);
-        await fastify.prisma.credential.update({
-          where: { id: cred.id },
-          data: { encryptedClaims: reEncrypted },
-        });
-        credentialsMigrated++;
+        try {
+          const reEncrypted = reEncrypt(cred.encryptedClaims, body.oldKeyHex, body.newKeyHex);
+          await fastify.prisma.credential.update({
+            where: { id: cred.id },
+            data: { encryptedClaims: reEncrypted },
+          });
+          credentialsMigrated++;
+        } catch {
+          skipped++;
+        }
       }
 
       // Re-encrypt DID private keys
@@ -428,12 +439,16 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
       });
       for (const did of dids) {
         if (!did.encryptedPrivateKey) continue;
-        const reEncrypted = reEncrypt(did.encryptedPrivateKey, body.oldKeyHex, body.newKeyHex);
-        await fastify.prisma.dID.update({
-          where: { id: did.id },
-          data: { encryptedPrivateKey: reEncrypted },
-        });
-        didsMigrated++;
+        try {
+          const reEncrypted = reEncrypt(did.encryptedPrivateKey, body.oldKeyHex, body.newKeyHex);
+          await fastify.prisma.dID.update({
+            where: { id: did.id },
+            data: { encryptedPrivateKey: reEncrypted },
+          });
+          didsMigrated++;
+        } catch {
+          skipped++;
+        }
       }
 
       // Re-encrypt webhook secrets (only those in iv:tag:data format)
@@ -450,7 +465,7 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
           });
           webhooksMigrated++;
         } catch {
-          // Skip non-encrypted secrets (plaintext legacy values)
+          skipped++;
         }
       }
 
@@ -465,6 +480,7 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
         credentialsMigrated,
         didsMigrated,
         webhooksMigrated,
+        skipped,
       });
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
@@ -490,7 +506,10 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
 
       const where: Record<string, unknown> = { userId };
       if (query.action) {
-        where.action = { contains: query.action };
+        if (query.action.length > 100) {
+          throw new AppError(400, 'bad-request', 'Action filter too long');
+        }
+        where.action = query.action;
       }
 
       const [logs, total] = await Promise.all([

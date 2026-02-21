@@ -71,6 +71,7 @@ const governanceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /api/v1/governance/proposals - List proposals
   fastify.get('/proposals', async (request, reply) => {
+    await fastify.authenticate(request);
     const query = request.query as { status?: string; category?: string; page?: string; limit?: string };
     const page = parseInt(query.page || '1');
     const limit = Math.min(parseInt(query.limit || '50'), 100);

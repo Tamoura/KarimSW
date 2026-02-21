@@ -93,16 +93,26 @@ describe('Decentralized Governance - /api/v1/governance', () => {
   });
 
   describe('GET /api/v1/governance/proposals', () => {
-    it('should list proposals', async () => {
+    it('should list proposals with auth', async () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/governance/proposals',
+        headers: { authorization: `Bearer ${devToken}` },
       });
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body).toHaveProperty('proposals');
       expect(body.proposals.length).toBeGreaterThan(0);
+    });
+
+    it('should reject unauthenticated requests', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/governance/proposals',
+      });
+
+      expect(res.statusCode).toBe(401);
     });
   });
 

@@ -438,6 +438,14 @@ describe('Auth Branches Extended - /api/v1/auth uncovered branches', () => {
   // run the appropriate assertion.
 
   describe('POST /api/v1/auth/verify-email', () => {
+    beforeEach(async () => {
+      // Clear rate limit counter so tests aren't affected by cross-suite accumulation
+      const redis = (app as unknown as { redis: null | { del: (...args: string[]) => Promise<number> } }).redis;
+      if (redis) {
+        await redis.del('verify-email:ratelimit:127.0.0.1');
+      }
+    });
+
     it('should return 500 service-unavailable when Redis is null, or 400 invalid-token when Redis is available but key is missing', async () => {
       const redis = (app as unknown as { redis: null | object }).redis;
 

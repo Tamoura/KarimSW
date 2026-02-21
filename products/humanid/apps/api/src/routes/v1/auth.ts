@@ -66,7 +66,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       if (existingUser) {
-        // SECURITY: Return generic success to prevent email enumeration
+        // SECURITY: Hash password even for existing users to prevent timing-based enumeration
+        await hashPassword(body.password);
         logger.info('Registration attempted for existing email', { email: body.email });
         return reply.code(201).send({
           message: 'Account created successfully. Please check your email for verification.',
@@ -366,8 +367,21 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/auth/verify-email
   // Validates a token stored in Redis, sets user's emailVerified flag.
+  // Rate limited to prevent brute-force token guessing.
   fastify.post('/verify-email', async (request, reply) => {
     try {
+      // Per-IP rate limiting for email verification
+      if (fastify.redis) {
+        const rateLimitKey = `verify-email:ratelimit:${request.ip}`;
+        const attempts = await fastify.redis.incr(rateLimitKey);
+        if (attempts === 1) {
+          await fastify.redis.expire(rateLimitKey, 60);
+        }
+        if (attempts > 10) {
+          throw new AppError(429, 'rate-limited', 'Too many verification attempts. Try again later.');
+        }
+      }
+
       const body = verifyEmailSchema.parse(request.body);
 
       // Hash the verification token to look up in Redis

@@ -265,6 +265,7 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/governance/proposals?status=ACTIVE',
+        headers: { authorization: `Bearer ${devToken}` },
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();
@@ -277,6 +278,7 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/governance/proposals?status=REJECTED',
+        headers: { authorization: `Bearer ${devToken}` },
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();
@@ -289,6 +291,7 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/governance/proposals?category=protocol',
+        headers: { authorization: `Bearer ${devToken}` },
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();
@@ -301,6 +304,7 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/governance/proposals?status=ACTIVE&category=protocol',
+        headers: { authorization: `Bearer ${devToken}` },
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();
@@ -308,6 +312,14 @@ describe('Governance Extended - /api/v1/governance error branches', () => {
         expect(proposal.status).toBe('ACTIVE');
         expect(proposal.category).toBe('protocol');
       }
+    });
+
+    it('should reject unauthenticated requests', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/governance/proposals',
+      });
+      expect(res.statusCode).toBe(401);
     });
   });
 
