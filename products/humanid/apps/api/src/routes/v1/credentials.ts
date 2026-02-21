@@ -103,18 +103,20 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
         throw new AppError(400, 'signing-failed', 'Issuer DID does not have a signing key. Rotate the DID to add an encrypted private key before issuing credentials.');
       }
 
-      const credential = await fastify.prisma.credential.create({
-        data: {
-          holderDidId: body.holderDidId,
-          issuerDidId: body.issuerDidId,
-          credentialType: body.credentialType,
-          encryptedClaims,
-          proof,
-          credentialHash,
-          status: 'OFFERED',
-          expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
-        },
-      });
+      const [credential] = await fastify.prisma.$transaction([
+        fastify.prisma.credential.create({
+          data: {
+            holderDidId: body.holderDidId,
+            issuerDidId: body.issuerDidId,
+            credentialType: body.credentialType,
+            encryptedClaims,
+            proof,
+            credentialHash,
+            status: 'OFFERED',
+            expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+          },
+        }),
+      ]);
 
       logger.info('Credential issued', {
         credentialId: credential.id,
@@ -156,8 +158,8 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
 
       const query = request.query as { role?: string; page?: string; limit?: string };
       const userId = request.currentUser!.id;
-      const page = parseInt(query.page || '1');
-      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const page = Math.max(1, parseInt(query.page || '1'));
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50'), 100));
       const skip = (page - 1) * limit;
 
       // Get user's DID IDs

@@ -95,8 +95,8 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
 
       const query = request.query as { page?: string; limit?: string };
-      const page = parseInt(query.page || '1');
-      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const page = Math.max(1, parseInt(query.page || '1'));
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50'), 100));
       const skip = (page - 1) * limit;
 
       const where = { userId: request.currentUser!.id };
@@ -513,8 +513,8 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
       const userId = request.currentUser!.id;
       const query = request.query as { page?: string; limit?: string; action?: string };
 
-      const page = parseInt(query.page || '1');
-      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const page = Math.max(1, parseInt(query.page || '1'));
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50'), 100));
       const skip = (page - 1) * limit;
 
       const where: Record<string, unknown> = { userId };
