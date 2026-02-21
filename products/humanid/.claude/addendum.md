@@ -327,6 +327,58 @@ Full Prisma schema: See `apps/api/prisma/schema.prisma`.
 
 ---
 
+## Security Invariants (Non-Negotiable)
+
+These rules are derived directly from the HumanID Audit Report (`docs/AUDIT-REPORT.md`). Every engineer agent working on HumanID MUST follow them without exception. They are not style preferences — violating any one of them will introduce a known, documented vulnerability.
+
+### Authentication & Token Storage
+
+| Rule | Correct Pattern | Forbidden Pattern |
+|------|----------------|-------------------|
+| **Never store auth tokens in localStorage** (RISK-026) | Store `access_token` in React state/context only; store `refresh_token` in an httpOnly SameSite=Strict cookie set by the server | `localStorage.setItem("access_token", ...)` `localStorage.setItem("refresh_token", ...)` |
+| **Never store PII in localStorage** (RISK-026) | User email, role, and ID may live in React context or a session cookie — never in localStorage | `localStorage.setItem("user_email", ...)` |
+| **JWT revocation must not fail open** (RISK-022) | Every auth check that uses Redis for revocation must have a hard fallback (reject the token if Redis is unavailable, do not skip the check) | `if (fastify.redis) { checkRevocation() }` with no else — this skips revocation when Redis is down |
+
+### API & Input Validation
+
+| Rule | Correct Pattern | Forbidden Pattern |
+|------|----------------|-------------------|
+| **All external URLs must be validated before use** (RISK-011) | Call `validateSsoUrl(url)` before any HTTP fetch to a user-supplied URL — this applies to OIDC, SAML, webhooks, and any other user-configurable URL | Fetching `discoveryUrl` or any user-supplied URL without first calling `validateSsoUrl()` |
+| **Webhook delivery must re-validate DNS** (RISK-014) | Resolve the webhook URL's hostname at delivery time and reject if the resolved IP is private, not just at creation time | Trusting the creation-time DNS validation for delivery |
+| **Pagination must reject negative integers** (RISK-025) | `const limit = Math.max(1, Math.min(parseInt(query.limit \|\| '50'), 100))` — clamp with `Math.max(1, ...)` | `Math.min(parseInt(query.limit \|\| '50'), 100)` alone — allows negative values through to Prisma |
+| **All list endpoints must be paginated** | Every `findMany` response must include `page`, `pageSize`, `total`, `totalPages` | Unbounded `findMany` with no `take`/`skip` |
+
+### Authorization
+
+| Rule | Correct Pattern | Forbidden Pattern |
+|------|----------------|-------------------|
+| **Every resource access must verify ownership** (RISK-001) | `where: { id, userId: request.currentUser!.id }` — always scope DB lookups to the authenticated user | `where: { id }` alone — fetches any record by ID regardless of owner |
+| **Account lockout window must not reset on each attempt** (RISK-015) | Set the TTL only when the counter is first created (`if (attempts === 1) { redis.expire(...) }`) | `redis.expire(attemptsKey, DURATION)` on every attempt — resets the window and defeats lockout |
+
+### Frontend
+
+| Rule | Correct Pattern | Forbidden Pattern |
+|------|----------------|-------------------|
+| **All pages must export metadata** (RISK-018) | `export const metadata: Metadata = { title: 'Page Name — HumanID' }` in every page.tsx | Page files without a `metadata` export |
+| **Never suppress focus indicators** (RISK-020) | Use `focus:ring-2 focus:ring-offset-2` or equivalent visible ring | `focus:outline-none` without a replacement focus style on any interactive element |
+| **API base URL must come from env** (RISK-005) | `const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5013/api/v1'` | `const API_BASE = "http://localhost:5013/api/v1"` hardcoded |
+
+### Rate Limiting
+
+| Rule | Correct Pattern | Forbidden Pattern |
+|------|----------------|-------------------|
+| **Rate limiting must be Redis-backed in production** (RISK-023) | Pass `store: fastify.redis` (or a Redis adapter) to `@fastify/rate-limit` config | Configuring rate-limit without a `store` option — defaults to in-memory, not shared across instances |
+
+### Audit Report Reference
+
+Before implementing anything in HumanID, read:
+- **Risk Register table**: `docs/AUDIT-REPORT.md` — Section 5 (Part A)
+- **Engineering detail**: `docs/AUDIT-REPORT.md` — Sections 6–15 (Part B)
+- **Current overall score**: 6.0/10 — Phase 0 blockers must be resolved before deployment
+- **Phase 0 blockers**: RISK-026 (localStorage tokens), RISK-011 (SSRF in OIDC), RISK-001 (anchoring BOLA), RISK-005 (hardcoded API_BASE)
+
+---
+
 ## Key Documents
 
 - **PRD**: `products/humanid/docs/PRD.md`
@@ -339,4 +391,4 @@ Full Prisma schema: See `apps/api/prisma/schema.prisma`.
 
 ---
 
-*This addendum is the source of truth for HumanID product context. Updated: February 19, 2026.*
+*This addendum is the source of truth for HumanID product context. Updated: February 21, 2026.*

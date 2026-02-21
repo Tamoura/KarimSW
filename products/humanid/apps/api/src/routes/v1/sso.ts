@@ -7,10 +7,59 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import dns from 'dns/promises';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { encrypt, decrypt } from '../../utils/encryption.js';
 import { buildRequireOrgOwner } from '../../utils/middleware.js';
+
+/**
+ * SSRF protection: reject URLs pointing to private/internal networks.
+ * Reuses the same logic as webhooks.ts validateWebhookUrl.
+ */
+async function validateSsoUrl(url: string): Promise<void> {
+  const parsed = new URL(url);
+  const hostname = parsed.hostname.toLowerCase();
+
+  const blockedPatterns = [
+    /^localhost$/i,
+    /^127\.\d+\.\d+\.\d+$/,
+    /^10\.\d+\.\d+\.\d+$/,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\.\d+\.\d+$/,
+    /^169\.254\.\d+\.\d+$/,
+    /^0\.0\.0\.0$/,
+    /^\[?::1\]?$/,
+    /^\[?fe80:/i,
+    /^\[?fc00:/i,
+    /^\[?fd/i,
+    /\.internal$/i,
+    /\.local$/i,
+    /\.localhost$/i,
+  ];
+
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(hostname)) {
+      throw new AppError(400, 'bad-request', 'SSO URL must not point to private or internal networks');
+    }
+  }
+
+  // DNS resolution check: validate resolved IPs are not private
+  const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
+  const privateIpPatterns = [
+    /^127\.\d+\.\d+\.\d+$/,
+    /^10\.\d+\.\d+\.\d+$/,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\.\d+\.\d+$/,
+    /^169\.254\.\d+\.\d+$/,
+    /^0\.0\.0\.0$/,
+  ];
+  for (const addr of addresses) {
+    if (privateIpPatterns.some(p => p.test(addr))) {
+      throw new AppError(400, 'bad-request', 'SSO URL resolves to a private IP address');
+    }
+  }
+}
 
 const oidcConfigSchema = z.object({
   orgId: z.string().uuid(),
@@ -36,6 +85,9 @@ const ssoRoutes: FastifyPluginAsync = async (fastify) => {
       const userId = request.currentUser!.id;
 
       await requireOrgOwner(userId, body.orgId);
+
+      // SSRF protection: validate discoveryUrl does not point to private networks
+      await validateSsoUrl(body.discoveryUrl);
 
       const ssoConfig = {
         oidc: {
@@ -87,6 +139,9 @@ const ssoRoutes: FastifyPluginAsync = async (fastify) => {
       const userId = request.currentUser!.id;
 
       await requireOrgOwner(userId, body.orgId);
+
+      // SSRF protection: validate metadataUrl does not point to private networks
+      await validateSsoUrl(body.metadataUrl);
 
       const ssoConfig = {
         saml: {

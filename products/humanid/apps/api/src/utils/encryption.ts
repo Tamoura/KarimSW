@@ -135,6 +135,12 @@ export function timingSafeCompare(a: string, b: string): boolean {
  * @returns The re-encrypted string under the new key
  */
 export function reEncrypt(encryptedStr: string, oldKeyHex: string, newKeyHex: string): string {
+  if (oldKeyHex.length !== 64) {
+    throw new Error('Old encryption key must be exactly 64 hex characters (32 bytes for AES-256)');
+  }
+  if (newKeyHex.length !== 64) {
+    throw new Error('New encryption key must be exactly 64 hex characters (32 bytes for AES-256)');
+  }
   const oldKey = Buffer.from(oldKeyHex, 'hex');
   const newKey = Buffer.from(newKeyHex, 'hex');
 

@@ -169,10 +169,11 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
   };
 
-  if (fastify.redis) {
+  if (fastify.redis && process.env.NODE_ENV !== 'test') {
+    rateLimitConfig.redis = fastify.redis;
     logger.info('Rate limiting configured with Redis distributed store');
   } else {
-    logger.warn('Redis not configured - rate limiting uses in-memory store');
+    logger.warn('Redis not configured or test mode - rate limiting uses in-memory store');
   }
 
   await fastify.register(rateLimit, rateLimitConfig);

@@ -15,15 +15,17 @@ import fp from 'fastify-plugin';
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 
-function appendPoolParams(url: string, poolSize: number, poolTimeout: number): string {
+function appendPoolParams(url: string, poolSize: number, poolTimeout: number, statementTimeout: number): string {
   if (!url) return url;
   const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}connection_limit=${poolSize}&pool_timeout=${poolTimeout}`;
+  return `${url}${separator}connection_limit=${poolSize}&pool_timeout=${poolTimeout}&statement_timeout=${statementTimeout}`;
 }
 
 const prismaPlugin: FastifyPluginAsync = async (fastify) => {
   const poolSize = parseInt(process.env.DATABASE_POOL_SIZE || '20', 10);
   const poolTimeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10);
+  // Statement timeout in milliseconds (RISK-007: prevent long-running queries from exhausting pool)
+  const statementTimeout = parseInt(process.env.DATABASE_STATEMENT_TIMEOUT || '30000', 10);
 
   // Validate pool size to prevent resource exhaustion
   if (isNaN(poolSize) || poolSize < 1 || poolSize > 500) {
@@ -39,7 +41,22 @@ const prismaPlugin: FastifyPluginAsync = async (fastify) => {
 
   const prisma = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-    datasourceUrl: appendPoolParams(process.env.DATABASE_URL || '', poolSize, poolTimeout),
+    datasourceUrl: appendPoolParams(process.env.DATABASE_URL || '', poolSize, poolTimeout, statementTimeout),
+  });
+
+  // Slow query logging middleware (RISK-007)
+  prisma.$use(async (params, next) => {
+    const start = Date.now();
+    const result = await next(params);
+    const duration = Date.now() - start;
+    if (duration > 5000) {
+      logger.warn('Slow database query detected', {
+        model: params.model,
+        action: params.action,
+        duration_ms: duration,
+      });
+    }
+    return result;
   });
 
   // Test connection on startup

@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:3213',
+    baseURL: 'http://localhost:3113',
     trace: 'on-first-retry',
   },
   projects: [
@@ -20,13 +20,13 @@ export default defineConfig({
   webServer: [
     {
       command: 'cd apps/api && npx tsx src/index.ts',
-      port: 5109,
+      port: 5009,
       reuseExistingServer: true,
       timeout: 15000,
     },
     {
-      command: 'cd apps/web && npx vite --port 3213',
-      port: 3213,
+      command: 'cd apps/web && npx vite --port 3113',
+      port: 3113,
       reuseExistingServer: true,
       timeout: 15000,
     },

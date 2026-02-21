@@ -53,8 +53,8 @@ detect_ports() {
     done
   fi
 
-  [ -z "$api_port" ] && api_port="5101"
-  [ -z "$web_port" ] && web_port="3204"
+  [ -z "$api_port" ] && api_port="5001"
+  [ -z "$web_port" ] && web_port="3104"
 
   echo "$api_port $web_port"
 }
@@ -321,7 +321,7 @@ if [ "$HAS_WEB" = true ] && command -v npx >/dev/null 2>&1; then
     SMOKE_SCRIPT_PW="$PW_RUN_DIR/.smoke-pw-$$.mjs"
     cat > "$SMOKE_SCRIPT_PW" << 'PLAYWRIGHT_EOF'
 import { chromium } from 'playwright';
-const url = process.argv[2] || 'http://localhost:3204';
+const url = process.argv[2] || 'http://localhost:3104';
 const screenshotPath = process.argv[3] || '/tmp/smoke-screenshot.png';
 (async () => {
   const browser = await chromium.launch({ headless: true });

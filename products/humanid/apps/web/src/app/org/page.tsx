@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type OrgRole = "OWNER" | "ADMIN" | "MEMBER";
 
@@ -106,11 +107,7 @@ export default function OrgPage() {
   const [memberActionSuccess, setMemberActionSuccess] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -135,16 +132,11 @@ export default function OrgPage() {
       const data = await membersRes.json();
       const memberList: OrgMember[] = data.members ?? [];
       setMembers(memberList);
-
-      const userId = localStorage.getItem("user_id");
-      const me = memberList.find((m) => m.userId === userId);
-      if (me) setMyRole(me.role);
     }
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
     const orgId = localStorage.getItem("org_id");
 
     if (!token) {
@@ -152,7 +144,7 @@ export default function OrgPage() {
       return;
     }
 
-    setEmail(storedEmail ?? "");
+    setEmail("");
 
     if (orgId) {
       fetchOrgData(token, orgId)
@@ -165,7 +157,7 @@ export default function OrgPage() {
 
   async function handleCreateOrg(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!createName.trim()) { setCreateError("Organisation name is required."); return; }
@@ -213,7 +205,7 @@ export default function OrgPage() {
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     const orgId = localStorage.getItem("org_id");
     if (!token || !orgId) return;
 
@@ -259,7 +251,7 @@ export default function OrgPage() {
   }
 
   async function handleUpdateRole(userId: string, newRole: OrgRole) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     const orgId = localStorage.getItem("org_id");
     if (!token || !orgId) return;
 
@@ -301,7 +293,7 @@ export default function OrgPage() {
   }
 
   async function handleRemoveMember(userId: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     const orgId = localStorage.getItem("org_id");
     if (!token || !orgId) return;
 
@@ -339,12 +331,7 @@ export default function OrgPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
-    localStorage.removeItem("org_id");
+    setAccessToken(null);
     router.push("/login");
   }
 

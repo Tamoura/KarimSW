@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 type ReportStatus = "OPEN" | "TRIAGED" | "IN_PROGRESS" | "RESOLVED" | "DUPLICATE" | "INVALID";
@@ -143,11 +144,7 @@ export default function SecurityPage() {
   const [advSuccess, setAdvSuccess] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -173,12 +170,11 @@ export default function SecurityPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
 
     if (!token) { router.push("/login"); return; }
 
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchData(token)
       .catch(() => setError("Could not load security data. Please try again."))
       .finally(() => setLoading(false));
@@ -186,7 +182,7 @@ export default function SecurityPage() {
 
   async function handleSubmitReport(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!rptTitle.trim()) { setSubmitError("Title is required."); return; }
@@ -242,7 +238,7 @@ export default function SecurityPage() {
     e.preventDefault();
     if (!selectedReport) return;
 
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setUpdatingReport(true);
@@ -292,7 +288,7 @@ export default function SecurityPage() {
 
   async function handlePublishAdvisory(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!advTitle.trim()) { setAdvError("Title is required."); return; }
@@ -345,11 +341,7 @@ export default function SecurityPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 

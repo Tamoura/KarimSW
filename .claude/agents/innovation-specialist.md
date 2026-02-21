@@ -370,7 +370,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3200
+Open http://localhost:3100
 
 ## Screenshots
 

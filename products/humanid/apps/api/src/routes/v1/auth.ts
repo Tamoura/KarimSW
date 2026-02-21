@@ -166,7 +166,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         // Increment failed attempts even for non-existent users (prevent enumeration)
         if (fastify.redis) {
           const attempts = await fastify.redis.incr(attemptsKey);
-          await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
+          // Only set TTL on first attempt to enforce a fixed window (not sliding)
+          if (attempts === 1) await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
           if (attempts >= MAX_LOGIN_ATTEMPTS) {
             await fastify.redis.set(lockoutKey, '1', 'EX', LOCKOUT_DURATION_SECONDS);
           }
@@ -184,7 +185,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         // Track failed login attempt
         if (fastify.redis) {
           const attempts = await fastify.redis.incr(attemptsKey);
-          await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
+          // Only set TTL on first attempt to enforce a fixed window (not sliding)
+          if (attempts === 1) await fastify.redis.expire(attemptsKey, LOCKOUT_DURATION_SECONDS);
           if (attempts >= MAX_LOGIN_ATTEMPTS) {
             await fastify.redis.set(lockoutKey, '1', 'EX', LOCKOUT_DURATION_SECONDS);
             logger.warn('Account locked due to too many failed login attempts', { email: body.email });
@@ -330,9 +332,26 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   // DELETE /api/v1/auth/logout
   // Requires Bearer token auth. Deletes session (single or all).
+  // Also revokes the current access token via Redis blocklist (RISK-002).
   fastify.delete('/logout', async (request, reply) => {
     try {
       await fastify.authenticate(request);
+
+      // Revoke the current access token by adding its JTI to the blocklist (RISK-002)
+      const authHeader = request.headers.authorization as string;
+      if (authHeader?.startsWith('Bearer ') && fastify.redis) {
+        const token = authHeader.substring(7);
+        try {
+          const decoded = fastify.jwt.decode(token) as { jti?: string; exp?: number } | null;
+          if (decoded?.jti) {
+            // TTL = remaining token lifetime (exp - now), minimum 1 second
+            const ttl = decoded.exp ? Math.max(1, decoded.exp - Math.floor(Date.now() / 1000)) : 900;
+            await fastify.redis.set(`revoked:jwt:${decoded.jti}`, '1', 'EX', ttl);
+          }
+        } catch {
+          // Non-fatal: if we can't revoke the JTI, session deletion still protects the user
+        }
+      }
 
       const body = logoutSchema.parse(request.body || {});
 

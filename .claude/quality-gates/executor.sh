@@ -412,7 +412,7 @@ case $GATE_TYPE in
           [ -n "$API_PORT" ] && break
         fi
       done
-      [ -z "$API_PORT" ] && API_PORT="5101"
+      [ -z "$API_PORT" ] && API_PORT="5001"
 
       echo "Starting API server on port $API_PORT..." >> "$REPORT_FILE"
       cd "$PRODUCT_PATH/apps/api"

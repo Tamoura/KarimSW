@@ -48,7 +48,7 @@ app.register(apiKeyRoutes, { prefix: '/v1/api-keys', defaultPermissions: { read:
 ```typescript
 import { useAuth, ProtectedRoute, createAuthApiClient, TokenManager } from '@karimsw/auth/frontend';
 
-const apiClient = createAuthApiClient({ baseUrl: 'http://localhost:5101' });
+const apiClient = createAuthApiClient({ baseUrl: 'http://localhost:5001' });
 const { user, login, logout } = useAuth({
   loginFn: async (email, pw) => { const r = await apiClient.login(email, pw); return r; },
   logoutFn: () => apiClient.logout(),
@@ -204,7 +204,7 @@ Location: `packages/saas-kit/`
 - Configurable features: auth, billing, webhooks, notifications, audit
 - Auto-generates Fastify backend + React/Vite frontend + Prisma schema + Docker Compose
 - Kebab-case product names with automatic PascalCase/camelCase/UPPER_SNAKE derivatives
-- Port configuration for API (5100-5199) and Web (3200-3299) ranges
+- Port configuration for API (5000-5099) and Web (3100-3199) ranges
 - Template interpolation with `{{key}}` values and `{{#if feature.X}}` conditionals
 
 **Generator API** (`@karimsw/saas-kit`):
@@ -221,7 +221,7 @@ Location: `packages/saas-kit/`
 **Usage (CLI):**
 ```bash
 karimsw-create my-product \
-  --api-port 5110 --web-port 3210 \
+  --api-port 5010 --web-port 3110 \
   --all-features \
   --description "My awesome SaaS product"
 ```
@@ -234,8 +234,8 @@ const files = generateProduct({
   name: 'my-product',
   displayName: 'My Product',
   description: 'A new SaaS product',
-  apiPort: 5110,
-  webPort: 3210,
+  apiPort: 5010,
+  webPort: 3110,
   dbName: 'my_product_db',
   features: { auth: true, billing: true, webhooks: false, notifications: true, audit: true },
 }, '/path/to/products/my-product');
@@ -602,7 +602,7 @@ const files = generateProduct({
 - **Source**: `stablecoin-gateway/apps/api/Dockerfile`
 - **Maturity**: Production
 - **Reuse**: Copy as-is; adjust paths and port
-- **Description**: Two-stage build (builder + runner). Builder installs deps, generates Prisma client, and compiles TypeScript. Runner uses Alpine, installs `dumb-init` for proper PID 1 signal handling, creates a non-root `nodejs` user (UID 1001), copies only built artifacts. Includes a health check on `/health`. Exposes port 5101.
+- **Description**: Two-stage build (builder + runner). Builder installs deps, generates Prisma client, and compiles TypeScript. Runner uses Alpine, installs `dumb-init` for proper PID 1 signal handling, creates a non-root `nodejs` user (UID 1001), copies only built artifacts. Includes a health check on `/health`. Exposes port 5001.
 - **To reuse**: Copy and update: port number (EXPOSE), health check URL, source copy paths. The dumb-init + non-root user pattern is production-ready.
 
 #### Docker Compose (Full Stack)

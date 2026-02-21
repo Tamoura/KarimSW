@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type FedProtocol = "OIDC" | "SAML";
 type FedDirection = "INBOUND" | "OUTBOUND";
@@ -117,11 +118,7 @@ export default function FederationPage() {
   const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -136,10 +133,9 @@ export default function FederationPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchLinks(token)
       .catch(() => setError("Could not load federation links. Please try again."))
       .finally(() => setLoading(false));
@@ -147,7 +143,7 @@ export default function FederationPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!createProviderName.trim()) { setCreateError("Provider name is required."); return; }
@@ -211,7 +207,7 @@ export default function FederationPage() {
 
   async function handleResolve(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (!resolveProtocolId.trim()) { setResolveError("Protocol ID is required."); return; }
@@ -247,7 +243,7 @@ export default function FederationPage() {
   }
 
   async function handleDelete(id: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setDeletingId(id);
@@ -282,11 +278,7 @@ export default function FederationPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 

@@ -342,6 +342,10 @@ model User {
   // Verification requests created by this user (as verifier)
   verificationRequests VerificationRequest[]
 
+  // Government partnership applications submitted by this user
+  governmentPartnerships     GovernmentPartnership[]
+  governmentCredentialSchemes GovernmentCredentialScheme[]
+
   @@index([email])
   @@index([role])
   @@index([status])
@@ -504,6 +508,9 @@ model Credential {
   @@index([status])
   @@index([credentialType])
   @@index([issuedAt])
+  // Composite indexes for common query patterns (RISK-003)
+  @@index([holderDidId, status])
+  @@index([issuerDidId, issuedAt])
   @@map("credentials")
 }
 
@@ -591,6 +598,8 @@ model VerificationRequest {
   @@index([holderDid])
   @@index([status])
   @@index([expiresAt])
+  // Composite index for expired request cleanup (RISK-003)
+  @@index([holderDid, expiresAt])
   @@map("verification_requests")
 }
 
@@ -682,6 +691,8 @@ model ApiKey {
   @@index([keyHash])
   @@index([environment])
   @@index([status])
+  // Composite index for developer key listings (RISK-003)
+  @@index([userId, status, environment])
   @@map("api_keys")
 }
 
@@ -711,6 +722,8 @@ model AuditLog {
   @@index([entityType])
   @@index([entityId])
   @@index([createdAt(sort: Desc)])
+  // Composite index for audit trail per entity (RISK-003)
+  @@index([entityType, entityId])
   @@map("audit_logs")
 }
 
@@ -1013,6 +1026,8 @@ model FederationLink {
   @@index([userId])
   @@index([didId])
   @@index([protocol])
+  // Composite index for active federation links per user (RISK-003)
+  @@index([userId, isActive])
   @@map("federation_links")
 }
 
@@ -1118,6 +1133,74 @@ model GovernanceProposal {
   @@index([category])
   @@index([votingEndsAt])
   @@map("governance_proposals")
+}
+
+// ============================================================================
+// DOMAIN 11: GOVERNMENT PARTNERSHIPS (RISK-001)
+// ============================================================================
+
+enum PartnershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+
+  @@map("partnership_status")
+}
+
+enum SchemeStatus {
+  ACTIVE
+  INACTIVE
+  DEPRECATED
+
+  @@map("scheme_status")
+}
+
+/// Government partnership applications
+model GovernmentPartnership {
+  id                  String            @id @default(uuid())
+  governmentEntity    String            @map("government_entity")
+  country             String            @db.VarChar(3)
+  contactName         String            @map("contact_name")
+  contactEmail        String            @map("contact_email")
+  programDescription  String            @map("program_description") @db.Text
+  estimatedVolume     Int?              @map("estimated_volume")
+  status              PartnershipStatus @default(PENDING)
+  appliedBy           String            @map("applied_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  appliedByUser User @relation(fields: [appliedBy], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([country])
+  @@index([appliedBy])
+  @@map("government_partnerships")
+}
+
+/// Government credential schemes
+model GovernmentCredentialScheme {
+  id                 String      @id @default(uuid())
+  name               String
+  country            String      @db.VarChar(3)
+  credentialType     String      @map("credential_type")
+  schema             Json
+  requiredAttributes Json        @map("required_attributes")
+  status             SchemeStatus @default(ACTIVE)
+  createdBy          String      @map("created_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  createdByUser User @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([country])
+  @@index([credentialType])
+  @@map("government_credential_schemes")
 }
 
 /// Votes on governance proposals

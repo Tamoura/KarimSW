@@ -14,6 +14,26 @@ import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
 
+// Circular buffer for O(1) duration tracking (replaces shift()-based array)
+class CircularBuffer {
+  private data: number[];
+  private index = 0;
+  private _size = 0;
+  constructor(private maxSize: number) {
+    this.data = new Array(maxSize).fill(0);
+  }
+  push(value: number): void {
+    this.data[this.index] = value;
+    this.index = (this.index + 1) % this.maxSize;
+    if (this._size < this.maxSize) this._size++;
+  }
+  toArray(): number[] {
+    if (this._size < this.maxSize) return this.data.slice(0, this._size);
+    return [...this.data.slice(this.index), ...this.data.slice(0, this.index)];
+  }
+  get length(): number { return this._size; }
+}
+
 // Metrics storage (in-memory; can be replaced with Prometheus/StatsD)
 interface Metrics {
   requests: {
@@ -28,7 +48,7 @@ interface Metrics {
   performance: {
     totalDuration: number;
     requestCount: number;
-    durations: number[];
+    durations: CircularBuffer;
   };
 }
 
@@ -45,7 +65,7 @@ const metrics: Metrics = {
   performance: {
     totalDuration: 0,
     requestCount: 0,
-    durations: [],
+    durations: new CircularBuffer(1000),
   },
 };
 
@@ -68,19 +88,14 @@ function trackMetrics(request: FastifyRequest, reply: FastifyReply, duration: nu
   metrics.performance.totalDuration += duration;
   metrics.performance.requestCount++;
   metrics.performance.durations.push(duration);
-
-  // Keep only last 1000 durations for percentile calculation
-  if (metrics.performance.durations.length > 1000) {
-    metrics.performance.durations.shift();
-  }
 }
 
 /**
  * Calculate percentiles from array.
  */
-function calculatePercentile(arr: number[], percentile: number): number {
-  if (arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
+function calculatePercentile(buf: CircularBuffer, percentile: number): number {
+  if (buf.length === 0) return 0;
+  const sorted = buf.toArray().sort((a, b) => a - b);
   const index = Math.ceil((percentile / 100) * sorted.length) - 1;
   return sorted[Math.max(0, index)];
 }
@@ -158,9 +173,10 @@ const observabilityPlugin: FastifyPluginAsync = async (fastify) => {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    const p50 = calculatePercentile(metrics.performance.durations, 50);
-    const p95 = calculatePercentile(metrics.performance.durations, 95);
-    const p99 = calculatePercentile(metrics.performance.durations, 99);
+    const durationsBuf = metrics.performance.durations;
+    const p50 = calculatePercentile(durationsBuf, 50);
+    const p95 = calculatePercentile(durationsBuf, 95);
+    const p99 = calculatePercentile(durationsBuf, 99);
 
     const avgDuration =
       metrics.performance.requestCount > 0

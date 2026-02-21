@@ -95,3 +95,22 @@ jobs:
           echo "Lines: $LINES%, Branches: $BRANCHES%"
           node -e "const c=require('./coverage/coverage-summary.json'); if(c.total.lines.pct<85){console.error('Line coverage below 85%');process.exit(1)}"
           node -e "const c=require('./coverage/coverage-summary.json'); if(c.total.branches.pct<80){console.error('Branch coverage below 80%');process.exit(1)}"
+
+  sast:
+    name: Static Application Security Testing
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

@@ -173,8 +173,8 @@ Every implementation artifact MUST trace back to a specification requirement. Tr
 All products MUST use unique ports to enable simultaneous local development.
 
 **Rules:**
-- Frontend apps: 3200-3299 (assigned per product in PORT-REGISTRY.md)
-- Backend APIs: 5100-5199 (assigned per product)
+- Frontend apps: 3100-3199 (assigned per product in PORT-REGISTRY.md)
+- Backend APIs: 5000-5099 (assigned per product)
 - Mobile dev servers: 8081-8099 (assigned per product)
 - Databases: Default Docker ports (shared containers)
 - New products MUST register ports before foundation phase

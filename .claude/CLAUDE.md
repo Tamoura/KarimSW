@@ -85,8 +85,8 @@ release/[product]/v[X.Y.Z]       # Releases
 
 **IMPORTANT**: See `.claude/PORT-REGISTRY.md` for port assignments. All products must use unique ports to run simultaneously.
 
-- Frontend apps: 3200-3299 (assigned per product)
-- Backend APIs: 5100-5199 (assigned per product)
+- Frontend apps: 3100-3199 (assigned per product)
+- Backend APIs: 5000-5099 (assigned per product)
 - Mobile dev servers: 8081-8099 (assigned per product)
 - Databases: default ports in Docker (shared via containers)
 
@@ -164,6 +164,33 @@ All diagrams use **Mermaid syntax** (renders natively in GitHub, Command Center,
 - **Dynamic Test Generation**: QA generates edge case tests from code analysis
 - **Database State Verification**: Verify DB integrity, not just API responses
 
+### Audit-Driven Development (MANDATORY)
+
+**Before writing ANY code for a product that has an audit report**, agents MUST:
+
+1. **Read the audit report** — `products/[product]/docs/AUDIT-REPORT.md`
+2. **Scan the Risk Register** — every open RISK item in the table. Take 30 seconds.
+3. **Check if your task touches a flagged area** — auth, tokens, API calls, encryption, input handling, database queries, webhooks, SSO, rate limiting, pagination
+4. **Apply the verified fix pattern from the report** — do NOT re-invent. The report contains the correct implementation for each risk.
+5. **Never re-introduce a flagged pattern** — if the report says "never store tokens in localStorage", that is permanent, not a suggestion.
+
+**Why this rule exists**: The audit and the code were written in separate cycles. Engineers wrote `localStorage.setItem("access_token", ...)` because nothing stopped them — the audit ran after. This rule closes that gap. The audit is now a pre-coding requirement, not a post-coding review.
+
+**How to apply it in practice**:
+
+| Your task involves... | Check in the audit report... |
+|-----------------------|------------------------------|
+| Authentication / tokens | Open RISK items tagged Security or Auth |
+| Any frontend page | RISK-026 pattern (token storage) and Accessibility findings |
+| API endpoint (input validation) | RISK items tagged Injection or API |
+| External URL / webhook / SSO | SSRF findings (RISK tagged SSRF or DNS) |
+| Pagination on list endpoint | Architecture / Performance findings |
+| Rate limiting | DevOps / Architecture findings |
+| Database queries | Performance findings (N+1, indexes) |
+| Encryption / keys | Security / Cryptography findings |
+
+**If no audit report exists for the product**: complete the task, then flag to the Orchestrator that an audit is needed before shipping.
+
 ### Component Reuse (MANDATORY)
 
 **Before building ANY backend plugin, service, utility, frontend hook, component, or infrastructure config**, agents MUST:
@@ -197,7 +224,7 @@ KarimSW uses [GitHub's spec-kit](https://github.com/github/spec-kit) methodology
 | `/speckit.implement` | Orchestrator | Execute tasks via specialist agents |
 
 **Key files:**
-- `.specify/memory/constitution.md` — Governing principles (9 articles)
+- `.specify/memory/constitution.md` — Governing principles (10 articles)
 - `.specify/templates/` — Spec, plan, tasks, checklist templates
 - `.specify/templates/commands/` — Command definitions
 - `products/[product]/docs/specs/` — Feature specifications

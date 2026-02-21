@@ -38,8 +38,8 @@ const advisorySchema = z.object({
 const securityRoutes: FastifyPluginAsync = async (fastify) => {
   const requireAdmin = buildRequireAdmin(fastify);
 
-  // POST /api/v1/security/reports - Submit vulnerability report (no auth)
-  fastify.post('/reports', async (request, reply) => {
+  // POST /api/v1/security/reports - Submit vulnerability report (no auth, rate-limited)
+  fastify.post('/reports', { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
       const body = reportSchema.parse(request.body);
 

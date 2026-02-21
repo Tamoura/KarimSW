@@ -36,10 +36,27 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
       // Try JWT first (for user sessions)
       try {
         const decoded = await request.jwtVerify();
-        const { userId: decodedUserId } = decoded as { userId?: string };
+        const { userId: decodedUserId, jti } = decoded as { userId?: string; jti?: string };
 
         if (!decodedUserId || typeof decodedUserId !== 'string') {
           throw new AppError(401, 'unauthorized', 'Invalid token payload');
+        }
+
+        // Check JWT revocation blocklist (RISK-002, RISK-022)
+        // In production, hard-fail if Redis is unavailable: revoked tokens MUST NOT
+        // be silently allowed through when the blocklist store is unreachable.
+        if (jti) {
+          if (!fastify.redis) {
+            if (process.env.NODE_ENV === 'production') {
+              throw new AppError(503, 'service-unavailable', 'Token revocation service unavailable. Please try again.');
+            }
+            // Non-production: allow (no revocation store configured — acceptable for dev/test)
+          } else {
+            const isRevoked = await fastify.redis.exists(`revoked:jwt:${jti}`);
+            if (isRevoked) {
+              throw new AppError(401, 'unauthorized', 'Token has been revoked');
+            }
+          }
         }
 
         const user = await fastify.prisma.user.findUnique({

@@ -354,7 +354,7 @@ export function LoginForm() {
 
 ```typescript
 // lib/api.ts
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5100';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 class ApiClient {
   private baseUrl: string;

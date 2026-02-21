@@ -5,19 +5,364 @@ import rehypeRaw from 'rehype-raw';
 import type { Components } from 'react-markdown';
 import mermaid from 'mermaid';
 
-let mermaidCounter = 0;
+// ---------------------------------------------------------------------------
+// Mermaid render queue — serializes render() calls to prevent race conditions.
+// When a document has many diagrams (ConnectIn has up to 19 per file), calling
+// mermaid.initialize() + mermaid.render() concurrently causes failures because
+// mermaid's internal state is shared.
+// ---------------------------------------------------------------------------
 
-function initMermaid(theme: 'light' | 'dark') {
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: theme === 'dark' ? 'dark' : 'default',
-    flowchart: { useMaxWidth: true, htmlLabels: true },
-    sequence: { useMaxWidth: true },
+let mermaidCounter = 0;
+let currentTheme: 'light' | 'dark' = 'dark';
+
+function ensureMermaidTheme(theme: 'light' | 'dark') {
+  if (currentTheme !== theme) {
+    currentTheme = theme;
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: theme === 'dark' ? 'dark' : 'default',
+      flowchart: { useMaxWidth: true, htmlLabels: true },
+      sequence: { useMaxWidth: true },
+    });
+  }
+}
+
+// Initialize once at module load
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  flowchart: { useMaxWidth: true, htmlLabels: true },
+  sequence: { useMaxWidth: true },
+});
+
+type QueueItem = {
+  id: string;
+  chart: string;
+  theme: 'light' | 'dark';
+  resolve: (svg: string) => void;
+  reject: (err: unknown) => void;
+};
+
+const renderQueue: QueueItem[] = [];
+let rendering = false;
+
+async function processQueue() {
+  if (rendering) return;
+  rendering = true;
+
+  while (renderQueue.length > 0) {
+    const item = renderQueue.shift()!;
+    try {
+      ensureMermaidTheme(item.theme);
+      const { svg } = await mermaid.render(item.id, item.chart.trim());
+      item.resolve(svg);
+    } catch (err) {
+      item.reject(err);
+    }
+    // Clean up any leftover temporary element mermaid may have created
+    const tmp = document.getElementById(item.id);
+    if (tmp) tmp.remove();
+  }
+
+  rendering = false;
+}
+
+function enqueueRender(chart: string, theme: 'light' | 'dark'): Promise<string> {
+  const id = `mermaid-${++mermaidCounter}`;
+  return new Promise<string>((resolve, reject) => {
+    renderQueue.push({ id, chart, theme, resolve, reject });
+    processQueue();
   });
 }
 
-// Initialize with default
-initMermaid('dark');
+// ---------------------------------------------------------------------------
+// Wireframe detection — identifies ASCII wireframe art in unlabeled code blocks
+// by looking for box-drawing patterns like +---+, |...|, etc.
+// ---------------------------------------------------------------------------
+
+function isWireframe(code: string): boolean {
+  const lines = code.split('\n');
+  if (lines.length < 4) return false;
+
+  let boxLines = 0;
+  for (const line of lines) {
+    if (/^\s*[+|]/.test(line) || /[+|]\s*$/.test(line) || /\+-{3,}/.test(line)) {
+      boxLines++;
+    }
+  }
+  // If more than 40% of lines look like box-drawing, it's a wireframe
+  return boxLines / lines.length > 0.4;
+}
+
+// ---------------------------------------------------------------------------
+// asciiToBoxDrawing — converts ASCII wireframe characters (+, -, |) to
+// proper Unicode box-drawing characters (┌, ─, │, etc.) by analyzing
+// the surrounding context of each + junction.
+// ---------------------------------------------------------------------------
+
+function asciiToBoxDrawing(code: string): string {
+  const lines = code.split('\n');
+  // Pad all lines to equal length for safe neighbor lookups
+  const maxLen = Math.max(...lines.map((l) => l.length));
+  const grid = lines.map((l) => l.padEnd(maxLen).split(''));
+
+  const isVert = (ch: string) => ch === '|' || ch === '+';
+  const isHoriz = (ch: string) => ch === '-' || ch === '+';
+
+  const junctionMap: Record<string, string> = {
+    '0000': '+', // isolated (shouldn't happen)
+    '0001': '─', '0010': '│', '0011': '└',
+    '0100': '─', '0101': '─', '0110': '┘',
+    '0111': '┴',
+    '1000': '│', '1001': '┌', '1010': '│',
+    '1011': '├',
+    '1100': '┐', '1101': '┬', '1110': '┤',
+    '1111': '┼',
+  };
+
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      const ch = grid[r][c];
+      if (ch === '+') {
+        const down  = r + 1 < grid.length ? isVert(grid[r + 1][c]) : false;
+        const right = c + 1 < grid[r].length ? isHoriz(grid[r][c + 1]) : false;
+        const up    = r - 1 >= 0 ? isVert(grid[r - 1][c]) : false;
+        const left  = c - 1 >= 0 ? isHoriz(grid[r][c - 1]) : false;
+        const key = `${down ? 1 : 0}${right ? 1 : 0}${up ? 1 : 0}${left ? 1 : 0}`;
+        grid[r][c] = junctionMap[key] || '┼';
+      } else if (ch === '-') {
+        grid[r][c] = '─';
+      } else if (ch === '|') {
+        grid[r][c] = '│';
+      }
+    }
+  }
+
+  return grid.map((row) => row.join('').trimEnd()).join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Wireframe tokenizer — parses box-drawn wireframe lines into typed segments
+// so each element (input, button, icon, etc.) can be styled distinctly,
+// producing a B&W form-like visual from ASCII art.
+// ---------------------------------------------------------------------------
+
+const BOX_CHARS = new Set('┌┐└┘├┤┬┴┼─│');
+
+type WireTokenType =
+  | 'border' | 'input' | 'button' | 'link' | 'icon'
+  | 'radio' | 'checkbox' | 'toggle' | 'progress' | 'text';
+
+interface WireToken { type: WireTokenType; raw: string; active?: boolean; pct?: number }
+
+function tokenizeWireframeLine(line: string): WireToken[] {
+  const tokens: WireToken[] = [];
+  let i = 0;
+  let buf = '';
+  const flush = () => { if (buf) { tokens.push({ type: 'text', raw: buf }); buf = ''; } };
+
+  while (i < line.length) {
+    const ch = line[i];
+
+    // Box-drawing characters
+    if (BOX_CHARS.has(ch)) {
+      flush();
+      let j = i;
+      while (j < line.length && BOX_CHARS.has(line[j])) j++;
+      tokens.push({ type: 'border', raw: line.slice(i, j) });
+      i = j; continue;
+    }
+
+    // Radio (*)
+    if (ch === '(' && i + 2 < line.length && line[i + 1] === '*' && line[i + 2] === ')') {
+      flush(); tokens.push({ type: 'radio', raw: '(*)', active: true }); i += 3; continue;
+    }
+
+    // Checkbox [x]
+    if (ch === '[' && i + 2 < line.length && line[i + 1] === 'x' && line[i + 2] === ']') {
+      flush(); tokens.push({ type: 'checkbox', raw: '[x]', active: true }); i += 3; continue;
+    }
+
+    // Toggle on [v ...]
+    if (ch === '[' && i + 2 < line.length && line[i + 1] === 'v' && line[i + 2] === ' ') {
+      const end = line.indexOf(']', i);
+      if (end !== -1 && end - i < 15) {
+        flush(); tokens.push({ type: 'toggle', raw: line.slice(i, end + 1), active: true });
+        i = end + 1; continue;
+      }
+    }
+
+    // Toggle off [  Off]
+    if (ch === '[' && i + 1 < line.length && line[i + 1] === ' ') {
+      const end = line.indexOf(']', i);
+      if (end !== -1 && end - i < 15 && /^off$/i.test(line.slice(i + 1, end).trim())) {
+        flush(); tokens.push({ type: 'toggle', raw: line.slice(i, end + 1), active: false });
+        i = end + 1; continue;
+      }
+    }
+
+    // Progress bar [===---]
+    if (ch === '[') {
+      const end = line.indexOf(']', i);
+      if (end !== -1) {
+        const inner = line.slice(i + 1, end);
+        if (/^[=\- ]+$/.test(inner) && inner.includes('=') && inner.length > 3) {
+          flush();
+          const filled = (inner.match(/=/g) || []).length;
+          const total = filled + (inner.match(/-/g) || []).length;
+          tokens.push({ type: 'progress', raw: line.slice(i, end + 1), pct: total > 0 ? Math.round(filled / total * 100) : 0 });
+          i = end + 1; continue;
+        }
+      }
+    }
+
+    // Input field {text}
+    if (ch === '{') {
+      const end = line.indexOf('}', i);
+      if (end !== -1) { flush(); tokens.push({ type: 'input', raw: line.slice(i, end + 1) }); i = end + 1; continue; }
+    }
+
+    // Button [text]
+    if (ch === '[') {
+      const end = line.indexOf(']', i);
+      if (end !== -1 && end - i < 60) { flush(); tokens.push({ type: 'button', raw: line.slice(i, end + 1) }); i = end + 1; continue; }
+    }
+
+    // Icon <text>
+    if (ch === '<') {
+      const end = line.indexOf('>', i);
+      if (end !== -1 && end - i < 25 && !line.slice(i + 1, end).includes('<')) {
+        flush(); tokens.push({ type: 'icon', raw: line.slice(i, end + 1) }); i = end + 1; continue;
+      }
+    }
+
+    // Link (text) — more than 3 chars
+    if (ch === '(') {
+      const end = line.indexOf(')', i);
+      if (end !== -1 && end - i > 3 && end - i < 50) {
+        flush(); tokens.push({ type: 'link', raw: line.slice(i, end + 1) }); i = end + 1; continue;
+      }
+    }
+
+    buf += ch; i++;
+  }
+  flush();
+  return tokens;
+}
+
+// ---------------------------------------------------------------------------
+// WireframeBlock — renders tokenized wireframe with B&W form styling
+// ---------------------------------------------------------------------------
+
+function WireframeBlock({ code, dark }: { code: string; dark: boolean }) {
+  const boxDrawn = asciiToBoxDrawing(code);
+  const lines = boxDrawn.split('\n');
+  // Delimiter color — nearly invisible so brackets/braces fade out
+  const dim = dark ? 'text-gray-700' : 'text-gray-300';
+
+  function renderToken(t: WireToken, key: number) {
+    switch (t.type) {
+      case 'border':
+        return <span key={key} className={dark ? 'text-gray-600' : 'text-gray-300'}>{t.raw}</span>;
+      case 'input': {
+        const inner = t.raw.slice(1, -1);
+        return (
+          <span key={key}>
+            <span className={dim}>{t.raw[0]}</span>
+            <span className={dark ? 'text-gray-300' : 'text-gray-700'}
+              style={{ boxShadow: `inset 0 -1.5px 0 ${dark ? 'rgba(156,163,175,0.5)' : 'rgba(107,114,128,0.4)'}` }}>
+              {inner}
+            </span>
+            <span className={dim}>{t.raw[t.raw.length - 1]}</span>
+          </span>
+        );
+      }
+      case 'button': {
+        const inner = t.raw.slice(1, -1);
+        return (
+          <span key={key}>
+            <span className={dim}>{t.raw[0]}</span>
+            <span className={`font-semibold ${dark ? 'bg-gray-600 text-white' : 'bg-gray-800 text-white'}`}>{inner}</span>
+            <span className={dim}>{t.raw[t.raw.length - 1]}</span>
+          </span>
+        );
+      }
+      case 'link': {
+        const inner = t.raw.slice(1, -1);
+        return (
+          <span key={key}>
+            <span className={dim}>{t.raw[0]}</span>
+            <span className={`underline ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{inner}</span>
+            <span className={dim}>{t.raw[t.raw.length - 1]}</span>
+          </span>
+        );
+      }
+      case 'icon': {
+        const inner = t.raw.slice(1, -1);
+        return (
+          <span key={key}>
+            <span className={dim}>{t.raw[0]}</span>
+            <span className={`italic ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{inner}</span>
+            <span className={dim}>{t.raw[t.raw.length - 1]}</span>
+          </span>
+        );
+      }
+      case 'radio':
+        return <span key={key} className={`font-bold ${dark ? 'text-gray-200' : 'text-gray-800'}`}>{t.raw}</span>;
+      case 'checkbox':
+        return <span key={key} className={`font-bold ${dark ? 'text-gray-200' : 'text-gray-800'}`}>{t.raw}</span>;
+      case 'toggle':
+        return (
+          <span key={key} className={`font-semibold ${
+            t.active ? (dark ? 'bg-gray-500 text-white' : 'bg-gray-700 text-white') : (dark ? 'text-gray-600' : 'text-gray-400')
+          }`}>{t.raw}</span>
+        );
+      case 'progress':
+        return (
+          <span key={key}>
+            {[...t.raw].map((c, ci) => {
+              if (c === '=') return <span key={ci} className={`font-bold ${dark ? 'text-gray-200' : 'text-gray-700'}`}>{c}</span>;
+              if (c === '-') return <span key={ci} className={dark ? 'text-gray-700' : 'text-gray-300'}>{c}</span>;
+              return <span key={ci} className={dim}>{c}</span>;
+            })}
+          </span>
+        );
+      default:
+        return <span key={key}>{t.raw}</span>;
+    }
+  }
+
+  return (
+    <div className={`my-6 rounded-xl overflow-hidden border ${
+      dark ? 'border-gray-700 bg-gray-950' : 'border-gray-200 bg-white'
+    }`} style={{ boxShadow: dark ? 'none' : '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <div className={`flex items-center gap-2 px-4 py-2.5 border-b text-xs font-semibold tracking-wide uppercase ${
+        dark ? 'bg-gray-900 border-gray-800 text-gray-500' : 'bg-gray-50 border-gray-200 text-gray-400'
+      }`}>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+        </svg>
+        Wireframe
+      </div>
+      <div className={`p-6 overflow-x-auto ${dark ? 'bg-gray-950' : 'bg-white'}`}>
+        <div
+          style={{ fontFamily: "'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, monospace", fontSize: '13px', lineHeight: 1.5 }}
+          className={dark ? 'text-gray-300' : 'text-gray-700'}
+        >
+          {lines.map((ln, li) => (
+            <div key={li} className="whitespace-pre">
+              {tokenizeWireframeLine(ln).map((t, ti) => renderToken(t, ti))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MermaidDiagram — renders a single Mermaid chart via the serialized queue
+// ---------------------------------------------------------------------------
 
 function MermaidDiagram({ chart, theme }: { chart: string; theme: 'light' | 'dark' }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -25,12 +370,10 @@ function MermaidDiagram({ chart, theme }: { chart: string; theme: 'light' | 'dar
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
-    const id = `mermaid-${++mermaidCounter}`;
     let cancelled = false;
 
-    initMermaid(theme);
-    mermaid.render(id, chart.trim()).then(
-      ({ svg: renderedSvg }) => {
+    enqueueRender(chart, theme).then(
+      (renderedSvg) => {
         if (!cancelled) { setSvg(renderedSvg); setError(''); }
       },
       (err) => {
@@ -68,6 +411,31 @@ function MermaidDiagram({ chart, theme }: { chart: string; theme: 'light' | 'dar
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// extractText — recursively extracts text from React children.
+// rehype-raw converts <br/> inside code blocks into actual React elements,
+// breaking String(children). This function walks the tree and recovers the
+// original text, converting <br> elements back to <br/> for Mermaid.
+// ---------------------------------------------------------------------------
+
+function extractText(node: unknown): string {
+  if (node == null) return '';
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (typeof node === 'object' && 'props' in (node as any)) {
+    const el = node as any;
+    // Convert <br> elements back to <br/> text for Mermaid
+    if (el.type === 'br' || el.props?.node?.tagName === 'br') return '<br/>';
+    return extractText(el.props?.children);
+  }
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// MarkdownRenderer
+// ---------------------------------------------------------------------------
 
 interface MarkdownRendererProps {
   content: string;
@@ -169,9 +537,19 @@ export default function MarkdownRenderer({ content, theme = 'dark' }: MarkdownRe
       const child = children as ReactNode;
       if (child && typeof child === 'object' && 'props' in (child as any)) {
         const codeProps = (child as any).props;
+
+        // Mermaid diagrams
         if (codeProps?.className?.includes('language-mermaid')) {
-          const code = String(codeProps.children ?? '').replace(/\n$/, '');
+          const code = extractText(codeProps.children).replace(/\n$/, '');
           return <MermaidDiagram chart={code} theme={theme} />;
+        }
+
+        // Wireframe detection for unlabeled code blocks
+        if (!codeProps?.className) {
+          const code = extractText(codeProps.children).replace(/\n$/, '');
+          if (isWireframe(code)) {
+            return <WireframeBlock code={code} dark={dark} />;
+          }
         }
       }
       return (

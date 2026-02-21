@@ -85,8 +85,8 @@ const agentRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
       const query = request.query as { page?: string; limit?: string };
-      const page = parseInt(query.page || '1');
-      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const page = Math.max(1, parseInt(query.page || '1'));
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50'), 100));
       const skip = (page - 1) * limit;
 
       const where = { userId };
@@ -246,7 +246,7 @@ const agentRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id: delegationId, agentId: id },
         include: {
           agent: { include: { did: true } },
-          granter: true,
+          granter: { select: { id: true } },
         },
       });
 
@@ -265,7 +265,6 @@ const agentRoutes: FastifyPluginAsync = async (fastify) => {
         },
         granter: {
           id: delegation.granter.id,
-          email: delegation.granter.email,
         },
         permissions: delegation.delegatedPermissions,
         expiresAt: delegation.expiresAt.toISOString(),

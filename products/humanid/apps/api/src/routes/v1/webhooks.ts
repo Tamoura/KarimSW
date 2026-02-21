@@ -53,8 +53,9 @@ function isPrivateIp(ip: string): boolean {
 /**
  * SSRF protection: reject URLs pointing to private/internal networks.
  * Validates both hostname patterns and resolved DNS IPs.
+ * Returns the resolved IP to enable DNS-pinned delivery (prevents DNS rebinding).
  */
-async function validateWebhookUrl(url: string): Promise<void> {
+async function validateWebhookUrl(url: string): Promise<string | null> {
   const parsed = new URL(url);
 
   // Must be HTTPS in production
@@ -94,6 +95,7 @@ async function validateWebhookUrl(url: string): Promise<void> {
   }
 
   // DNS resolution check: resolve hostname and validate all IPs are public
+  // Return the pinned IP to prevent DNS rebinding during actual delivery
   try {
     const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
     const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
@@ -104,6 +106,9 @@ async function validateWebhookUrl(url: string): Promise<void> {
         throw new AppError(400, 'bad-request', 'Webhook URL resolves to a private network address');
       }
     }
+
+    // Return first resolved IP for pinning (null if no IPs resolved — e.g. IP literal in URL)
+    return addresses[0] || addresses6[0] || null;
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(400, 'bad-request', 'Could not resolve webhook URL hostname');
@@ -112,14 +117,15 @@ async function validateWebhookUrl(url: string): Promise<void> {
 
 const webhookRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/webhooks - Create webhook
-  fastify.post('/', async (request, reply) => {
+  // Rate limited: 20 per hour per user to prevent webhook spam (RISK-006)
+  fastify.post('/', { config: { rateLimit: { max: 20, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
       await fastify.authenticate(request);
       const body = createWebhookSchema.parse(request.body);
       const userId = request.currentUser!.id;
 
       // SSRF protection: validate URL is not internal
-      await validateWebhookUrl(body.url);
+      await validateWebhookUrl(body.url); // return value not needed here (only pinned for delivery)
 
       // Validate event types
       for (const event of body.events) {
@@ -279,8 +285,9 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      // SSRF protection: re-validate URL before delivery
-      await validateWebhookUrl(webhook.url);
+      // SSRF protection: re-validate URL before delivery and pin the resolved IP
+      // to prevent DNS rebinding between validation and the actual HTTP request
+      const resolvedIp = await validateWebhookUrl(webhook.url);
 
       // Attempt delivery (fire-and-forget for test)
       let deliveryStatus = 'FAILED';
@@ -296,10 +303,18 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10000);
 
-        const res = await fetch(webhook.url, {
+        // Build fetch URL: if we resolved an IP, replace hostname with pinned IP
+        // and pass the original hostname in the Host header to prevent rebinding
+        const parsedUrl = new URL(webhook.url);
+        const deliveryUrl = resolvedIp
+          ? `${parsedUrl.protocol}//${resolvedIp}${parsedUrl.port ? ':' + parsedUrl.port : ''}${parsedUrl.pathname}${parsedUrl.search}`
+          : webhook.url;
+
+        const res = await fetch(deliveryUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Host': parsedUrl.host,
             'X-HumanID-Signature': `sha256=${signature}`,
             'X-HumanID-Event': 'webhook.test',
           },
@@ -358,8 +373,8 @@ const webhookRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const query = request.query as { page?: string; limit?: string };
-      const page = parseInt(query.page || '1');
-      const limit = Math.min(parseInt(query.limit || '50'), 100);
+      const page = Math.max(1, parseInt(query.page || '1'));
+      const limit = Math.max(1, Math.min(parseInt(query.limit || '50'), 100));
       const skip = (page - 1) * limit;
 
       const [deliveries, total] = await Promise.all([

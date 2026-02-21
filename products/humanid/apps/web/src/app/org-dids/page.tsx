@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type OrgDidType = "COMPANY" | "DEPARTMENT" | "DEVICE";
 
@@ -138,11 +139,7 @@ export default function OrgDidsPage() {
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -157,10 +154,9 @@ export default function OrgDidsPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchOrgDids(token)
       .catch(() => setError("Could not load organizational DIDs. Please try again."))
       .finally(() => setLoading(false));
@@ -168,7 +164,7 @@ export default function OrgDidsPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!createName.trim()) { setCreateError("Name is required."); return; }
 
@@ -217,7 +213,7 @@ export default function OrgDidsPage() {
 
   async function handleCreateChild(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!childParentId) { setChildError("Parent org DID is required."); return; }
     if (!childName.trim()) { setChildError("Child name is required."); return; }
@@ -265,7 +261,7 @@ export default function OrgDidsPage() {
 
   async function handleLoadHierarchy(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!hierarchyOrgId) { setHierarchyError("Select an org DID."); return; }
 
@@ -300,11 +296,7 @@ export default function OrgDidsPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 

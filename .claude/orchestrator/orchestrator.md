@@ -264,8 +264,8 @@ When working on a product, ALWAYS read its addendum first.
 
 1. **Read the port registry**: `.claude/PORT-REGISTRY.md`
 2. **Assign unique ports**:
-   - Frontend: Next available in 3200-3299 range
-   - Backend API: Next available in 5100-5199 range
+   - Frontend: Next available in 3100-3199 range
+   - Backend API: Next available in 5000-5099 range
    - Mobile dev server: Next available in 8081-8099 range
 3. **Pass ports to agents** in task instructions
 4. **Update registry** immediately after assignment
@@ -280,13 +280,13 @@ Create new product "[product-name]"
 
 ## Assigned Ports
 
-- Frontend: 3207 (verified available in PORT-REGISTRY.md)
-- Backend API: 5103 (verified available in PORT-REGISTRY.md)
+- Frontend: 3107 (verified available in PORT-REGISTRY.md)
+- Backend API: 5003 (verified available in PORT-REGISTRY.md)
 
 ## Requirements
 
-- Configure Vite/Next.js to use port 3207
-- Configure Fastify/Express to use port 5103
+- Configure Vite/Next.js to use port 3107
+- Configure Fastify/Express to use port 5003
 - Add comment in configs: "// See .claude/PORT-REGISTRY.md"
 - Update PORT-REGISTRY.md with these assignments before completing
 ```

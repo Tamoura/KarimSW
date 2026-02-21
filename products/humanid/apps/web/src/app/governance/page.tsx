@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 type ProposalStatus = "ACTIVE" | "PASSED" | "REJECTED" | "EXPIRED";
 type ProposalCategory = "protocol" | "parameter" | "policy" | "treasury";
@@ -138,11 +139,7 @@ export default function GovernancePage() {
   const [resultsError, setResultsError] = useState<string | null>(null);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -168,10 +165,9 @@ export default function GovernancePage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchData(token)
       .catch(() => setError("Could not load governance data. Please try again."))
       .finally(() => setLoading(false));
@@ -179,7 +175,7 @@ export default function GovernancePage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
     if (!createTitle.trim()) { setCreateError("Title is required."); return; }
     if (!createDescription.trim()) { setCreateError("Description is required."); return; }
@@ -232,7 +228,7 @@ export default function GovernancePage() {
   async function handleVote(e: React.FormEvent) {
     e.preventDefault();
     if (!voteProposal) return;
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     setVoting(true);
@@ -275,7 +271,7 @@ export default function GovernancePage() {
   }
 
   async function handleLoadResults(proposalId: string) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) { handleUnauthorized(); return; }
 
     if (resultsProposalId === proposalId) {
@@ -316,11 +312,7 @@ export default function GovernancePage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 

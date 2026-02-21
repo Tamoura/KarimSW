@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getAccessToken, setAccessToken } from "@/lib/api-client";
 
-const API_BASE = "http://localhost:5013/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
 
 interface AuditEvent {
   id: string;
@@ -75,11 +76,7 @@ export default function AuditPage() {
   const [exporting, setExporting] = useState(false);
 
   const handleUnauthorized = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }, [router]);
 
@@ -123,21 +120,20 @@ export default function AuditPage() {
   }, [handleUnauthorized]);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedEmail = localStorage.getItem("user_email");
+    const token = getAccessToken();
 
     if (!token) {
       router.push("/login");
       return;
     }
 
-    setEmail(storedEmail ?? "");
+    setEmail("");
     fetchEvents(token, page, filterAction, filterEntityType, filterFrom, filterTo);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   function handleApplyFilters() {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) return;
     setPage(1);
     fetchEvents(token, 1, filterAction, filterEntityType, filterFrom, filterTo);
@@ -148,14 +144,14 @@ export default function AuditPage() {
     setFilterEntityType("");
     setFilterFrom("");
     setFilterTo("");
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) return;
     setPage(1);
     fetchEvents(token, 1, "", "", "", "");
   }
 
   function handlePageChange(newPage: number) {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) return;
     setPage(newPage);
     fetchEvents(token, newPage, filterAction, filterEntityType, filterFrom, filterTo);
@@ -163,7 +159,7 @@ export default function AuditPage() {
   }
 
   async function handleVerifyChain() {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) return;
 
     setVerifying(true);
@@ -186,7 +182,7 @@ export default function AuditPage() {
   }
 
   async function handleExport(format: "json" | "csv") {
-    const token = localStorage.getItem("access_token");
+    const token = getAccessToken();
     if (!token) return;
 
     setExporting(true);
@@ -214,11 +210,7 @@ export default function AuditPage() {
   }
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_email");
-    localStorage.removeItem("user_role");
+    setAccessToken(null);
     router.push("/login");
   }
 
