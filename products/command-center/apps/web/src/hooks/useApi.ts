@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const API_BASE = '/api/v1';
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? 'http://localhost:5109/api/v1';
 
 export function useApi<T>(endpoint: string) {
   const [data, setData] = useState<T | null>(null);

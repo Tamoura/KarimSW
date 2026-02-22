@@ -32,7 +32,7 @@ export async function buildApp() {
   });
 
   await app.register(cors, {
-    origin: process.env.CORS_ORIGIN ?? 'http://localhost:3113',
+    origin: process.env.CORS_ORIGIN ?? 'http://localhost:3213',
     credentials: true,
   });
 
