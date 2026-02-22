@@ -41,10 +41,12 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/humanid_test
-      JWT_SECRET: ${{ secrets.CI_JWT_SECRET }}
-      CLAIMS_ENCRYPTION_KEY: ${{ secrets.CI_CLAIMS_ENCRYPTION_KEY }}
+      # Test-only secrets — safe to hardcode; never used outside CI test runs.
+      JWT_SECRET: ${{ secrets.CI_JWT_SECRET || 'ci-test-jwt-secret-minimum-32-chars!!' }}
+      CLAIMS_ENCRYPTION_KEY: ${{ secrets.CI_CLAIMS_ENCRYPTION_KEY || 'ci-test-enc-key-exactly-32-chars!' }}
       REDIS_URL: redis://localhost:6379
-      INTERNAL_API_KEY: ${{ secrets.CI_INTERNAL_API_KEY }}
+      INTERNAL_API_KEY: ${{ secrets.CI_INTERNAL_API_KEY || 'ci-test-internal-api-key' }}
+      METRICS_API_KEY: ci-test-metrics-api-key
       NODE_ENV: test
 
     steps:
@@ -199,10 +201,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/humanid_test
           REDIS_URL: redis://localhost:6379
-          JWT_SECRET: ${{ secrets.CI_JWT_SECRET }}
-          CLAIMS_ENCRYPTION_KEY: ${{ secrets.CI_CLAIMS_ENCRYPTION_KEY }}
-          INTERNAL_API_KEY: ${{ secrets.CI_INTERNAL_API_KEY }}
-          METRICS_API_KEY: test-metrics-key
+          JWT_SECRET: ${{ secrets.CI_JWT_SECRET || 'ci-test-jwt-secret-minimum-32-chars!!' }}
+          CLAIMS_ENCRYPTION_KEY: ${{ secrets.CI_CLAIMS_ENCRYPTION_KEY || 'ci-test-enc-key-exactly-32-chars!' }}
+          INTERNAL_API_KEY: ${{ secrets.CI_INTERNAL_API_KEY || 'ci-test-internal-api-key' }}
+          METRICS_API_KEY: ci-test-metrics-api-key
 
       - uses: actions/upload-artifact@v4
         if: failure()
