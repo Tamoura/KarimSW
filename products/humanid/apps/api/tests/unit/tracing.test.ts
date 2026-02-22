@@ -12,27 +12,28 @@
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { trace, context } from '@opentelemetry/api';
-import { initTracing, shutdownTracing } from '../../src/tracing';
+import { initTracing, shutdownTracing, getProvider } from '../../src/tracing';
 
 describe('OpenTelemetry tracing (RISK-009)', () => {
   describe('initTracing()', () => {
+    afterEach(async () => {
+      await shutdownTracing();
+    });
+
     it('returns a provider instance without throwing', () => {
       const provider = initTracing({ serviceName: 'humanid-test', enabled: false });
       expect(provider).toBeDefined();
-      provider.shutdown();
     });
 
     it('accepts a custom service name', () => {
       const provider = initTracing({ serviceName: 'my-service', enabled: false });
       expect(provider).toBeDefined();
-      provider.shutdown();
     });
 
     it('does not throw when enabled is true but no OTLP endpoint is set', () => {
       delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
       expect(() => {
-        const p = initTracing({ serviceName: 'humanid-test', enabled: true });
-        p.shutdown();
+        initTracing({ serviceName: 'humanid-test', enabled: true });
       }).not.toThrow();
     });
   });
@@ -40,6 +41,37 @@ describe('OpenTelemetry tracing (RISK-009)', () => {
   describe('shutdownTracing()', () => {
     it('resolves without error when no provider is active', async () => {
       await expect(shutdownTracing()).resolves.not.toThrow();
+    });
+  });
+
+  describe('singleton isolation (RISK-028)', () => {
+    afterEach(async () => {
+      await shutdownTracing();
+    });
+
+    it('shuts down the previous provider when initTracing is called twice', async () => {
+      const first = initTracing({ serviceName: 'first', enabled: false });
+      const shutdownSpy = jest.spyOn(first, 'shutdown');
+
+      const second = initTracing({ serviceName: 'second', enabled: false });
+
+      // The first provider should have been shut down automatically
+      expect(shutdownSpy).toHaveBeenCalled();
+      // The second provider should be a different instance
+      expect(second).not.toBe(first);
+
+      shutdownSpy.mockRestore();
+    });
+
+    it('getProvider returns null after shutdownTracing', async () => {
+      initTracing({ serviceName: 'test', enabled: false });
+      await shutdownTracing();
+      expect(getProvider()).toBeNull();
+    });
+
+    it('getProvider returns the active provider', () => {
+      const provider = initTracing({ serviceName: 'test', enabled: false });
+      expect(getProvider()).toBe(provider);
     });
   });
 
