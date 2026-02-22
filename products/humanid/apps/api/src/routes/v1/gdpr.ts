@@ -135,20 +135,6 @@ const rectifySchema = z.object({
 // Routes
 // ---------------------------------------------------------------------------
 
-// Per-user rate limit helper — prevents abuse of sensitive GDPR operations.
-async function checkUserRateLimit(
-  fastify: { redis?: any },
-  key: string,
-  maxPerHour: number,
-): Promise<void> {
-  if (!fastify.redis) return;
-  const attempts = await fastify.redis.incr(key);
-  if (attempts === 1) await fastify.redis.expire(key, 3600);
-  if (attempts > maxPerHour) {
-    throw new AppError(429, 'rate-limited', 'Too many requests. Try again later.');
-  }
-}
-
 const gdprRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/me/data — Art. 15 right of access
   fastify.get('/data', async (request, reply) => {
@@ -156,7 +142,14 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
 
-      await checkUserRateLimit(fastify, `gdpr:data:${userId}`, 10);
+      if (fastify.redis) {
+        const key = `gdpr:data:${userId}`;
+        const attempts = await fastify.redis.incr(key);
+        if (attempts === 1) await fastify.redis.expire(key, 3600);
+        if (attempts > 10) {
+          throw new AppError(429, 'rate-limited', 'Too many data access requests. Try again later.');
+        }
+      }
 
       const data = await collectUserData(fastify, userId);
 
@@ -179,7 +172,14 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
 
-      await checkUserRateLimit(fastify, `gdpr:export:${userId}`, 5);
+      if (fastify.redis) {
+        const key = `gdpr:export:${userId}`;
+        const attempts = await fastify.redis.incr(key);
+        if (attempts === 1) await fastify.redis.expire(key, 3600);
+        if (attempts > 5) {
+          throw new AppError(429, 'rate-limited', 'Too many export requests. Try again later.');
+        }
+      }
 
       const data = await collectUserData(fastify, userId);
 
@@ -258,7 +258,15 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
 
-      await checkUserRateLimit(fastify, `gdpr:rectify:${userId}`, 10);
+      // Rate limit rectification requests: 10 per hour per user.
+      if (fastify.redis) {
+        const key = `gdpr:rectify:${userId}`;
+        const attempts = await fastify.redis.incr(key);
+        if (attempts === 1) await fastify.redis.expire(key, 3600);
+        if (attempts > 10) {
+          throw new AppError(429, 'rate-limited', 'Too many rectification requests. Try again later.');
+        }
+      }
 
       let body: z.infer<typeof rectifySchema>;
       try {
@@ -316,7 +324,15 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
 
-      await checkUserRateLimit(fastify, `gdpr:restrict:${userId}`, 10);
+      // Rate limit restriction requests: 10 per hour per user.
+      if (fastify.redis) {
+        const key = `gdpr:restrict:${userId}`;
+        const attempts = await fastify.redis.incr(key);
+        if (attempts === 1) await fastify.redis.expire(key, 3600);
+        if (attempts > 10) {
+          throw new AppError(429, 'rate-limited', 'Too many restriction requests. Try again later.');
+        }
+      }
 
       const user = await fastify.prisma.user.findUnique({
         where: { id: userId },
