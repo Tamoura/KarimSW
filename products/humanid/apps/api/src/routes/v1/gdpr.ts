@@ -11,6 +11,8 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
+import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 
@@ -29,6 +31,7 @@ async function collectUserData(fastify: { prisma: any }, userId: string) {
           role: true,
           status: true,
           emailVerified: true,
+          metadata: true,
           createdAt: true,
           updatedAt: true,
           // passwordHash intentionally excluded
@@ -116,6 +119,17 @@ async function collectUserData(fastify: { prisma: any }, userId: string) {
     generatedAt: new Date().toISOString(),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Validation schemas
+// ---------------------------------------------------------------------------
+
+const rectifySchema = z.object({
+  email: z.string().email('Invalid email format').optional(),
+}).refine(
+  (data) => Object.keys(data).length > 0,
+  { message: 'At least one field must be provided' },
+);
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -207,6 +221,105 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
       if (error instanceof AppError) throw error;
       logger.error('GDPR account deletion error', error);
       throw new AppError(500, 'internal-error', 'Failed to delete account');
+    }
+  });
+
+  // PATCH /api/v1/me — Art. 16 Right to Rectification
+  fastify.patch('/', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
+
+      let body: z.infer<typeof rectifySchema>;
+      try {
+        body = rectifySchema.parse(request.body);
+      } catch (zodErr) {
+        if (zodErr instanceof z.ZodError) {
+          return reply.code(400).send({
+            type: 'https://humanid.dev/errors/validation-error',
+            title: 'Validation Error',
+            status: 400,
+            detail: zodErr.errors.map((e) => e.message).join('; '),
+            request_id: request.id,
+          });
+        }
+        throw zodErr;
+      }
+
+      const updated = await fastify.prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(body.email && { email: body.email }),
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          status: true,
+          emailVerified: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      logger.info('GDPR rectification', { userId, action: 'data-rectified', fields: Object.keys(body) });
+
+      return reply.send({
+        id: updated.id,
+        email: updated.email,
+        role: updated.role,
+        status: updated.status,
+        emailVerified: updated.emailVerified,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('GDPR rectification error', error);
+      throw new AppError(500, 'internal-error', 'Failed to update personal data');
+    }
+  });
+
+  // POST /api/v1/me/restrict — Art. 18 Right to Restriction of Processing
+  fastify.post('/restrict', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+      const userId = request.currentUser!.id;
+
+      const user = await fastify.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, metadata: true },
+      });
+
+      if (!user) {
+        throw new AppError(404, 'not-found', 'User not found');
+      }
+
+      const existing = (user.metadata as Record<string, unknown>) || {};
+      const restrictedAt = new Date().toISOString();
+
+      await fastify.prisma.user.update({
+        where: { id: userId },
+        data: {
+          metadata: {
+            ...existing,
+            processingRestricted: true,
+            restrictedAt,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      logger.info('GDPR processing restriction applied', { userId, action: 'processing-restricted' });
+
+      return reply.code(200).send({
+        message: 'Processing restriction applied. Your data will not be processed further until lifted.',
+        processingRestricted: true,
+        restrictedAt,
+      });
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('GDPR restriction error', error);
+      throw new AppError(500, 'internal-error', 'Failed to apply processing restriction');
     }
   });
 };

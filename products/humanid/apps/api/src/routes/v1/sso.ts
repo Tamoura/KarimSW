@@ -8,9 +8,10 @@
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import dns from 'dns/promises';
+import { Prisma } from '@prisma/client';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
-import { encrypt, decrypt } from '../../utils/encryption.js';
+import { encrypt } from '../../utils/encryption.js';
 import { buildRequireOrgOwner } from '../../utils/middleware.js';
 
 /**
@@ -105,7 +106,7 @@ const ssoRoutes: FastifyPluginAsync = async (fastify) => {
 
       await fastify.prisma.organization.update({
         where: { id: body.orgId },
-        data: { ssoProvider: { ...existing, ...ssoConfig } },
+        data: { ssoProvider: { ...existing, ...ssoConfig } as Prisma.InputJsonValue },
       });
 
       logger.info('OIDC SSO configured', { orgId: body.orgId, userId });
@@ -157,7 +158,7 @@ const ssoRoutes: FastifyPluginAsync = async (fastify) => {
 
       await fastify.prisma.organization.update({
         where: { id: body.orgId },
-        data: { ssoProvider: { ...existing, ...ssoConfig } },
+        data: { ssoProvider: { ...existing, ...ssoConfig } as Prisma.InputJsonValue },
       });
 
       logger.info('SAML SSO configured', { orgId: body.orgId, userId });
@@ -253,7 +254,7 @@ const ssoRoutes: FastifyPluginAsync = async (fastify) => {
 
       await fastify.prisma.organization.update({
         where: { id: query.orgId },
-        data: { ssoProvider: Object.keys(ssoProvider).length > 0 ? ssoProvider : {} },
+        data: { ssoProvider: (Object.keys(ssoProvider).length > 0 ? ssoProvider : {}) as Prisma.InputJsonValue },
       });
 
       logger.info('OIDC SSO removed', { orgId: query.orgId, userId });

@@ -286,7 +286,7 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
       // Create test DIDs
       const testDids: { id: string; did: string }[] = [];
       for (let i = 0; i < 3; i++) {
-        const { generateEd25519KeyPair, buildDidFromPublicKey, buildDidDocument, serializeKeyPair, base58Encode } = await import('../../utils/did-crypto.js');
+        const { generateEd25519KeyPair, buildDidFromPublicKey, buildDidDocument, serializeKeyPair } = await import('../../utils/did-crypto.js');
         const keyPair = generateEd25519KeyPair();
         const serialized = serializeKeyPair(keyPair);
         const did = buildDidFromPublicKey(keyPair.publicKey);
@@ -479,7 +479,6 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
             fastify.prisma.webhook.update({ where: { id: u.id }, data: { secret: u.secret } })
           ),
         ],
-        { timeout: 60000 }
       );
 
       logger.info('Encryption key rotation complete', {

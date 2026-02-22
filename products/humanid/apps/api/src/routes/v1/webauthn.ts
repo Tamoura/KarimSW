@@ -18,7 +18,6 @@ import { z } from 'zod';
 import { randomBytes, createHash, randomUUID } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
-import { base58Encode } from '../../utils/did-crypto.js';
 
 /**
  * Validate the CBOR attestation object structure.

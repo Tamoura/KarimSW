@@ -8,6 +8,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 
@@ -51,7 +52,7 @@ const templateRoutes: FastifyPluginAsync = async (fastify) => {
           issuerId: issuer.id,
           name: body.name,
           credentialType: body.credentialType,
-          schema: body.schema,
+          schema: body.schema as Prisma.InputJsonValue,
           requiredAttributes: body.requiredAttributes,
           optionalAttributes: body.optionalAttributes,
           defaultExpiryDays: body.defaultExpiryDays || null,
@@ -207,7 +208,7 @@ const templateRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id },
         data: {
           ...(body.name && { name: body.name }),
-          ...(body.schema && { schema: body.schema }),
+          ...(body.schema && { schema: body.schema as Prisma.InputJsonValue }),
           ...(body.requiredAttributes && { requiredAttributes: body.requiredAttributes }),
           ...(body.optionalAttributes && { optionalAttributes: body.optionalAttributes }),
           ...(body.defaultExpiryDays !== undefined && { defaultExpiryDays: body.defaultExpiryDays }),

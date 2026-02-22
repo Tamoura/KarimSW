@@ -41,6 +41,18 @@ export default defineConfig({
     },
   ],
 
-  // Expect the web dev server to already be running.
-  // In CI this would be replaced by a webServer block.
+  webServer: [
+    {
+      command: 'cd ../apps/api && npm run dev',
+      port: 5013,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60000,
+    },
+    {
+      command: 'cd ../apps/web && npm run dev',
+      port: 3117,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60000,
+    },
+  ],
 });
