@@ -24,6 +24,8 @@ module.exports = {
     '!src/**/*.d.ts',
     '!src/index.ts',
   ],
+  // json-summary is required for the CI coverage threshold check script.
+  coverageReporters: ['text', 'lcov', 'json-summary'],
   testTimeout: 10000,
   maxWorkers: 1,
 };
