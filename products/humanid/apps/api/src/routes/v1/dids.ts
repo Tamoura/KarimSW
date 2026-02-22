@@ -21,6 +21,7 @@ import {
   serializeKeyPair,
   multibaseEncode,
   VerificationMethodEntry,
+  ServiceEntry,
 } from '../../utils/did-crypto.js';
 import { encryptPrivateKey } from '../../utils/encryption.js';
 
@@ -28,6 +29,11 @@ import { encryptPrivateKey } from '../../utils/encryption.js';
 
 const updateDidSchema = z.object({
   status: z.enum(['ACTIVE', 'SUSPENDED']),
+});
+
+const addServiceSchema = z.object({
+  type: z.string().min(1, 'Service type is required').max(100),
+  serviceEndpoint: z.string().url('Service endpoint must be a valid URL'),
 });
 
 // ==================== Routes ====================
@@ -343,6 +349,229 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
         publicKey: serialized.publicKeyBase58,
         documentVersion: newVersion,
         status: existing.status,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+
+  // POST /api/v1/dids/:id/services - Add service endpoint to DID document
+  fastify.post('/:id/services', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+
+      const { id } = request.params as { id: string };
+      const body = addServiceSchema.parse(request.body);
+
+      const existing = await fastify.prisma.dID.findFirst({
+        where: { id, userId: request.currentUser!.id },
+        include: {
+          documents: {
+            orderBy: { version: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!existing) {
+        throw new AppError(404, 'not-found', 'DID not found');
+      }
+
+      if (existing.status !== 'ACTIVE') {
+        throw new AppError(
+          400,
+          'bad-request',
+          `Cannot modify services for a ${existing.status.toLowerCase()} DID`
+        );
+      }
+
+      const latestDoc = existing.documents[0];
+      const currentVersion = latestDoc?.version || 1;
+      const newVersion = currentVersion + 1;
+
+      // Get current document data
+      const docData = latestDoc?.document as Record<string, unknown> | null;
+      const currentVMs = (docData?.verificationMethod || []) as VerificationMethodEntry[];
+      const currentServices = (docData?.service || []) as ServiceEntry[];
+      const currentAuth = (docData?.authentication || [`${existing.did}#key-1`]) as string[];
+
+      // Generate service ID
+      const serviceIndex = currentServices.length + 1;
+      const serviceId = `${existing.did}#service-${serviceIndex}`;
+
+      const newService: ServiceEntry = {
+        id: serviceId,
+        type: body.type,
+        serviceEndpoint: body.serviceEndpoint,
+      };
+
+      const allServices = [...currentServices, newService];
+
+      const document = buildDidDocument(existing.did, Buffer.alloc(32), {
+        verificationMethods: currentVMs.length > 0 ? currentVMs : undefined,
+        activeKeyId: currentAuth[0],
+        services: allServices,
+      });
+
+      // If no custom VMs were set, use default single-key format
+      if (currentVMs.length === 0) {
+        const publicKeyMultibase = multibaseEncode(
+          new Uint8Array(Buffer.from(existing.publicKey, 'base64'))
+        );
+        document.verificationMethod = [
+          {
+            id: `${existing.did}#key-1`,
+            type: 'Ed25519VerificationKey2020',
+            controller: existing.did,
+            publicKeyMultibase,
+          },
+        ];
+      }
+
+      const documentHash = createHash('sha256')
+        .update(JSON.stringify(document))
+        .digest('hex');
+
+      await fastify.prisma.dIDDocument.create({
+        data: {
+          didId: id,
+          version: newVersion,
+          document,
+          documentHash,
+        },
+      });
+
+      logger.info('Service endpoint added to DID', {
+        didId: id,
+        serviceId,
+        serviceType: body.type,
+      });
+
+      return reply.send({
+        id: existing.id,
+        did: existing.did,
+        serviceId,
+        documentVersion: newVersion,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({
+          type: 'https://humanid.dev/errors/validation-error',
+          title: 'Validation Error',
+          status: 400,
+          detail: error.errors.map((e) => e.message).join('; '),
+          request_id: request.id,
+        });
+      }
+      throw error;
+    }
+  });
+
+  // DELETE /api/v1/dids/:id/services/:serviceId - Remove service endpoint
+  fastify.delete('/:id/services/:serviceId', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+
+      const { id, serviceId } = request.params as {
+        id: string;
+        serviceId: string;
+      };
+
+      const existing = await fastify.prisma.dID.findFirst({
+        where: { id, userId: request.currentUser!.id },
+        include: {
+          documents: {
+            orderBy: { version: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!existing) {
+        throw new AppError(404, 'not-found', 'DID not found');
+      }
+
+      if (existing.status !== 'ACTIVE') {
+        throw new AppError(
+          400,
+          'bad-request',
+          `Cannot modify services for a ${existing.status.toLowerCase()} DID`
+        );
+      }
+
+      const latestDoc = existing.documents[0];
+      const docData = latestDoc?.document as Record<string, unknown> | null;
+      const currentServices = (docData?.service || []) as ServiceEntry[];
+      const currentVMs = (docData?.verificationMethod || []) as VerificationMethodEntry[];
+      const currentAuth = (docData?.authentication || [`${existing.did}#key-1`]) as string[];
+
+      // Find and remove the service
+      const fullServiceId = serviceId.includes('#')
+        ? serviceId
+        : `${existing.did}#${serviceId}`;
+      const serviceIndex = currentServices.findIndex(
+        (s) => s.id === fullServiceId
+      );
+      if (serviceIndex === -1) {
+        throw new AppError(404, 'not-found', 'Service endpoint not found');
+      }
+
+      const remainingServices = currentServices.filter(
+        (s) => s.id !== fullServiceId
+      );
+
+      const currentVersion = latestDoc?.version || 1;
+      const newVersion = currentVersion + 1;
+
+      const document = buildDidDocument(existing.did, Buffer.alloc(32), {
+        verificationMethods: currentVMs.length > 0 ? currentVMs : undefined,
+        activeKeyId: currentAuth[0],
+        services: remainingServices,
+      });
+
+      if (currentVMs.length === 0) {
+        const publicKeyMultibase = multibaseEncode(
+          new Uint8Array(Buffer.from(existing.publicKey, 'base64'))
+        );
+        document.verificationMethod = [
+          {
+            id: `${existing.did}#key-1`,
+            type: 'Ed25519VerificationKey2020',
+            controller: existing.did,
+            publicKeyMultibase,
+          },
+        ];
+      }
+
+      const documentHash = createHash('sha256')
+        .update(JSON.stringify(document))
+        .digest('hex');
+
+      await fastify.prisma.dIDDocument.create({
+        data: {
+          didId: id,
+          version: newVersion,
+          document,
+          documentHash,
+        },
+      });
+
+      logger.info('Service endpoint removed from DID', {
+        didId: id,
+        serviceId: fullServiceId,
+      });
+
+      return reply.send({
+        id: existing.id,
+        did: existing.did,
+        documentVersion: newVersion,
+        message: 'Service endpoint removed',
       });
     } catch (error) {
       if (error instanceof AppError) {
