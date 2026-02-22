@@ -1,13 +1,16 @@
 /**
  * GDPR Data Subject Rights Routes - /api/v1/me
  *
- * Implements three rights under GDPR:
- *   Art. 15 — Right of access:       GET  /api/v1/me/data
- *   Art. 20 — Right to portability:  GET  /api/v1/me/export
- *   Art. 17 — Right to erasure:      DELETE /api/v1/me
+ * Implements five rights under GDPR:
+ *   Art. 15 — Right of access:              GET    /api/v1/me/data
+ *   Art. 16 — Right to rectification:       PATCH  /api/v1/me
+ *   Art. 17 — Right to erasure:             DELETE /api/v1/me
+ *   Art. 18 — Right to restrict processing: POST   /api/v1/me/restrict
+ *   Art. 20 — Right to data portability:    GET    /api/v1/me/export
  *
  * All endpoints require a valid Bearer JWT.
  * No sensitive internal fields (passwordHash, encryptedPrivateKey) are returned.
+ * All mutating endpoints apply per-IP rate limiting before JWT verification.
  */
 
 import { FastifyPluginAsync } from 'fastify';
