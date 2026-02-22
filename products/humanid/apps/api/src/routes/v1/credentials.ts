@@ -118,6 +118,17 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
+      // Auto-queue blockchain anchor for the credential
+      await fastify.prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'CREDENTIAL',
+          entityId: credential.id,
+          chain: 'POLYGON',
+          dataHash: credentialHash,
+          status: 'PENDING',
+        },
+      });
+
       logger.info('Credential issued', {
         credentialId: credential.id,
         type: body.credentialType,
@@ -324,6 +335,20 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           status: 'REVOKED',
           revokedAt: new Date(),
+        },
+      });
+
+      // Auto-queue blockchain anchor for revocation
+      const revocationHash = createHash('sha256')
+        .update(JSON.stringify({ credentialId: id, revokedAt: updated.revokedAt?.toISOString() }))
+        .digest('hex');
+      await fastify.prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'REVOCATION',
+          entityId: id,
+          chain: 'POLYGON',
+          dataHash: revocationHash,
+          status: 'PENDING',
         },
       });
 

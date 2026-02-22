@@ -80,6 +80,17 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
+      // Auto-queue blockchain anchor for the new DID
+      await fastify.prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'DID',
+          entityId: didRecord.id,
+          chain: 'POLYGON',
+          dataHash: documentHash,
+          status: 'PENDING',
+        },
+      });
+
       logger.info('DID created with Ed25519 key pair', { userId: request.currentUser!.id, did });
 
       return reply.code(201).send({
