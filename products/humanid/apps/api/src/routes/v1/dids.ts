@@ -20,6 +20,7 @@ import {
   buildDidDocument,
   serializeKeyPair,
   multibaseEncode,
+  base58Decode,
   VerificationMethodEntry,
   ServiceEntry,
 } from '../../utils/did-crypto.js';
@@ -33,7 +34,12 @@ const updateDidSchema = z.object({
 
 const addServiceSchema = z.object({
   type: z.string().min(1, 'Service type is required').max(100),
-  serviceEndpoint: z.string().url('Service endpoint must be a valid URL'),
+  serviceEndpoint: z
+    .string()
+    .url('Service endpoint must be a valid URL')
+    .refine((url) => url.startsWith('https://'), {
+      message: 'Service endpoint must use HTTPS',
+    }),
 });
 
 // ==================== Routes ====================
@@ -244,123 +250,128 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
       await fastify.authenticate(request);
 
       const { id } = request.params as { id: string };
+      const userId = request.currentUser!.id;
 
-      const existing = await fastify.prisma.dID.findFirst({
-        where: { id, userId: request.currentUser!.id },
-        include: {
-          documents: {
-            orderBy: { version: 'desc' },
-            take: 1,
-          },
-        },
-      });
-
-      if (!existing) {
-        throw new AppError(404, 'not-found', 'DID not found');
-      }
-
-      if (existing.status !== 'ACTIVE') {
-        throw new AppError(
-          400,
-          'bad-request',
-          `Cannot rotate key for a ${existing.status.toLowerCase()} DID`
-        );
-      }
-
-      // Generate new key pair
+      // Generate new key pair outside transaction (pure crypto, no DB dependency)
       const newKeyPair = generateEd25519KeyPair();
       const serialized = serializeKeyPair(newKeyPair);
       const encryptedNewKey = encryptPrivateKey(serialized.privateKeyHex);
 
-      // Build updated DID document with old + new keys
-      const latestDoc = existing.documents[0];
-      const currentVersion = latestDoc?.version || 1;
-      const newVersion = currentVersion + 1;
-      const newKeyId = `${existing.did}#key-${newVersion}`;
+      // Use interactive transaction to prevent race conditions
+      const result = await fastify.prisma.$transaction(async (tx) => {
+        const existing = await tx.dID.findFirst({
+          where: { id, userId },
+          include: {
+            documents: {
+              orderBy: { version: 'desc' },
+              take: 1,
+            },
+          },
+        });
 
-      // Collect existing verification methods and mark them all as revoked
-      const existingVMs: VerificationMethodEntry[] =
-        latestDoc?.document &&
-        (latestDoc.document as Record<string, unknown>).verificationMethod
-          ? (
-              (latestDoc.document as Record<string, unknown>)
-                .verificationMethod as VerificationMethodEntry[]
-            ).map((vm) => ({ ...vm, revoked: true }))
-          : [
-              {
-                id: `${existing.did}#key-1`,
-                type: 'Ed25519VerificationKey2020',
-                controller: existing.did,
-                publicKeyMultibase: multibaseEncode(
-                  Buffer.from(existing.publicKey, 'base64')
-                ),
-                revoked: true,
-              },
-            ];
+        if (!existing) {
+          throw new AppError(404, 'not-found', 'DID not found');
+        }
 
-      // Add new key
-      const newVM: VerificationMethodEntry = {
-        id: newKeyId,
-        type: 'Ed25519VerificationKey2020',
-        controller: existing.did,
-        publicKeyMultibase: multibaseEncode(newKeyPair.publicKey),
-      };
+        if (existing.status !== 'ACTIVE') {
+          throw new AppError(
+            400,
+            'bad-request',
+            `Cannot rotate key for a ${existing.status.toLowerCase()} DID`
+          );
+        }
 
-      const verificationMethods = [...existingVMs, newVM];
+        // Build updated DID document with old + new keys
+        const latestDoc = existing.documents[0];
+        const currentVersion = latestDoc?.version || 1;
+        const newVersion = currentVersion + 1;
+        const newKeyId = `${existing.did}#key-${newVersion}`;
 
-      // Carry forward services from current document
-      const currentServices =
-        latestDoc?.document &&
-        (latestDoc.document as Record<string, unknown>).service
-          ? ((latestDoc.document as Record<string, unknown>).service as Array<{
-              id: string;
-              type: string;
-              serviceEndpoint: string;
-            }>)
-          : [];
+        // Collect existing verification methods and mark them all as revoked
+        const existingVMs: VerificationMethodEntry[] =
+          latestDoc?.document &&
+          (latestDoc.document as Record<string, unknown>).verificationMethod
+            ? (
+                (latestDoc.document as Record<string, unknown>)
+                  .verificationMethod as VerificationMethodEntry[]
+              ).map((vm) => ({ ...vm, revoked: true }))
+            : [
+                {
+                  id: `${existing.did}#key-1`,
+                  type: 'Ed25519VerificationKey2020',
+                  controller: existing.did,
+                  publicKeyMultibase: multibaseEncode(
+                    base58Decode(existing.publicKey)
+                  ),
+                  revoked: true,
+                },
+              ];
 
-      const document = buildDidDocument(existing.did, newKeyPair.publicKey, {
-        verificationMethods,
-        activeKeyId: newKeyId,
-        services: currentServices,
-      });
+        // Add new key
+        const newVM: VerificationMethodEntry = {
+          id: newKeyId,
+          type: 'Ed25519VerificationKey2020',
+          controller: existing.did,
+          publicKeyMultibase: multibaseEncode(newKeyPair.publicKey),
+        };
 
-      const documentHash = createHash('sha256')
-        .update(JSON.stringify(document))
-        .digest('hex');
+        const verificationMethods = [...existingVMs, newVM];
 
-      // Update DID record and create new document version in a transaction
-      await fastify.prisma.$transaction([
-        fastify.prisma.dID.update({
+        // Carry forward services from current document
+        const currentServices =
+          latestDoc?.document &&
+          (latestDoc.document as Record<string, unknown>).service
+            ? ((latestDoc.document as Record<string, unknown>).service as Array<{
+                id: string;
+                type: string;
+                serviceEndpoint: string;
+              }>)
+            : [];
+
+        const document = buildDidDocument(existing.did, newKeyPair.publicKey, {
+          verificationMethods,
+          activeKeyId: newKeyId,
+          services: currentServices,
+        });
+
+        const documentHash = createHash('sha256')
+          .update(JSON.stringify(document))
+          .digest('hex');
+
+        // Update DID record and create new document version atomically
+        await tx.dID.update({
           where: { id },
           data: {
             publicKey: serialized.publicKeyBase58,
             encryptedPrivateKey: encryptedNewKey,
           },
-        }),
-        fastify.prisma.dIDDocument.create({
+        });
+
+        await tx.dIDDocument.create({
           data: {
             didId: id,
             version: newVersion,
             document,
             documentHash,
           },
-        }),
-      ]);
+        });
+
+        return {
+          id: existing.id,
+          did: existing.did,
+          publicKey: serialized.publicKeyBase58,
+          documentVersion: newVersion,
+          status: existing.status,
+        };
+      });
 
       logger.info('DID key rotated', {
         didId: id,
-        newVersion,
-        userId: request.currentUser!.id,
+        newVersion: result.documentVersion,
+        userId,
       });
 
-      return reply.send({
-        id: existing.id,
-        did: existing.did,
-        publicKey: serialized.publicKeyBase58,
-        documentVersion: newVersion,
-        status: existing.status,
-      });
+      return reply.send(result);
     } catch (error) {
       if (error instanceof AppError) {
         return reply.code(error.statusCode).send(error.toJSON());
@@ -409,6 +420,15 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
       const currentServices = (docData?.service || []) as ServiceEntry[];
       const currentAuth = (docData?.authentication || [`${existing.did}#key-1`]) as string[];
 
+      // Enforce max service endpoint limit
+      if (currentServices.length >= 100) {
+        throw new AppError(
+          400,
+          'bad-request',
+          'Maximum of 100 service endpoints per DID reached'
+        );
+      }
+
       // Generate service ID
       const serviceIndex = currentServices.length + 1;
       const serviceId = `${existing.did}#service-${serviceIndex}`;
@@ -430,7 +450,7 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
       // If no custom VMs were set, use default single-key format
       if (currentVMs.length === 0) {
         const publicKeyMultibase = multibaseEncode(
-          new Uint8Array(Buffer.from(existing.publicKey, 'base64'))
+          base58Decode(existing.publicKey)
         );
         document.verificationMethod = [
           {
@@ -548,7 +568,7 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
 
       if (currentVMs.length === 0) {
         const publicKeyMultibase = multibaseEncode(
-          new Uint8Array(Buffer.from(existing.publicKey, 'base64'))
+          base58Decode(existing.publicKey)
         );
         document.verificationMethod = [
           {

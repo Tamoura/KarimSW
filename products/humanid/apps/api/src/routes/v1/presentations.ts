@@ -113,6 +113,17 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
         disclosedAttributes = allClaimKeys;
       } else {
         disclosedAttributes = body.disclosedAttributes!;
+        // Validate all disclosed attributes exist in the credential claims
+        const invalidAttrs = disclosedAttributes.filter(
+          (attr) => !allClaimKeys.includes(attr)
+        );
+        if (invalidAttrs.length > 0) {
+          throw new AppError(
+            400,
+            'bad-request',
+            `Disclosed attributes not found in credential: ${invalidAttrs.join(', ')}`
+          );
+        }
       }
 
       // Build presentation data
@@ -124,7 +135,7 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
           disclosed[key] = claims[key];
         } else {
           hashed[key] = createHash('sha256')
-            .update(`${key}:${claims[key]}`)
+            .update(`${key}\0${claims[key]}`)
             .digest('hex');
         }
       }
@@ -142,21 +153,23 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
         hashed,
       };
 
-      // Sign presentation with holder's Ed25519 key
-      const presentationJson = JSON.stringify(presentationData);
-
-      let proof = null;
-      if (holderDid.encryptedPrivateKey) {
-        const privateKeyHex = decryptPrivateKey(
-          holderDid.encryptedPrivateKey
-        );
-        const privateKey = deserializePrivateKey(privateKeyHex);
-        proof = buildEd25519Proof(
-          holderDid.did,
-          presentationJson,
-          privateKey
+      // Sign presentation with holder's Ed25519 key (required)
+      if (!holderDid.encryptedPrivateKey) {
+        throw new AppError(
+          400,
+          'signing-failed',
+          'Holder DID does not have a signing key. Rotate the DID to add an encrypted private key before creating presentations.'
         );
       }
+
+      const presentationJson = JSON.stringify(presentationData);
+      const privateKeyHex = decryptPrivateKey(holderDid.encryptedPrivateKey);
+      const privateKey = deserializePrivateKey(privateKeyHex);
+      const proof = buildEd25519Proof(
+        holderDid.did,
+        presentationJson,
+        privateKey
+      );
 
       // Store in database
       const presentation =
@@ -224,14 +237,7 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
       );
       const skip = (page - 1) * limit;
 
-      // Get user's DID IDs
-      const userDids = await fastify.prisma.dID.findMany({
-        where: { userId },
-        select: { id: true },
-      });
-      const didIds = userDids.map((d) => d.id);
-
-      const where = { holderDidId: { in: didIds } };
+      const where = { holderDid: { userId } };
 
       const [presentations, total] = await Promise.all([
         fastify.prisma.credentialPresentation.findMany({
@@ -280,18 +286,11 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params as { id: string };
       const userId = request.currentUser!.id;
 
-      // Get user's DID IDs
-      const userDids = await fastify.prisma.dID.findMany({
-        where: { userId },
-        select: { id: true },
-      });
-      const didIds = userDids.map((d) => d.id);
-
       const presentation =
         await fastify.prisma.credentialPresentation.findFirst({
           where: {
             id,
-            holderDidId: { in: didIds },
+            holderDid: { userId },
           },
           include: {
             credential: {
@@ -331,7 +330,7 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
             disclosed[key] = claims[key];
           } else {
             hashed[key] = createHash('sha256')
-              .update(`${key}:${claims[key]}`)
+              .update(`${key}\0${claims[key]}`)
               .digest('hex');
           }
         }
@@ -372,18 +371,11 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params as { id: string };
       const userId = request.currentUser!.id;
 
-      // Get user's DID IDs
-      const userDids = await fastify.prisma.dID.findMany({
-        where: { userId },
-        select: { id: true },
-      });
-      const didIds = userDids.map((d) => d.id);
-
       const presentation =
         await fastify.prisma.credentialPresentation.findFirst({
           where: {
             id,
-            holderDidId: { in: didIds },
+            holderDid: { userId },
           },
         });
 

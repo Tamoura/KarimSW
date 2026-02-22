@@ -502,7 +502,7 @@ describe('Presentation Routes - /api/v1/presentations', () => {
       expect(hashedFields.dateOfBirth).toMatch(/^[0-9a-f]{64}$/);
       // Verify hash is correct
       const expectedHash = createHash('sha256')
-        .update('dateOfBirth:1990-01-15')
+        .update('dateOfBirth\x001990-01-15')
         .digest('hex');
       expect(hashedFields.dateOfBirth).toBe(expectedHash);
     });

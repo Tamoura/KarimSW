@@ -373,6 +373,11 @@ const verifyRoutes: FastifyPluginAsync = async (fastify) => {
         throw new AppError(404, 'not-found', 'Credential not found');
       }
 
+      // BOLA protection: verify credential belongs to the specified holder DID
+      if (credential.holderDidId !== body.holderDidId) {
+        throw new AppError(403, 'forbidden', 'Credential does not belong to the specified holder DID');
+      }
+
       // Create the presentation
       const presentation = await fastify.prisma.credentialPresentation.create({
         data: {
@@ -403,38 +408,44 @@ const verifyRoutes: FastifyPluginAsync = async (fastify) => {
           if (!hashMatch) {
             checks.signature = { passed: false, detail: 'Credential data has been tampered with' };
           } else {
-            let claims: Record<string, unknown> = {};
+            let claims: Record<string, unknown>;
             try {
               claims = decryptClaims(credential.encryptedClaims);
-            } catch { /* claims may be empty */ }
+            } catch {
+              checks.signature = { passed: false, detail: 'Failed to decrypt credential claims for signature verification' };
+              // Skip further signature checks — cannot reconstruct signed data
+              claims = {};
+            }
 
-            const publicKey = extractPublicKeyFromDid(credential.issuerDid.did);
-            const credentialData = JSON.stringify({
-              '@context': ['https://www.w3.org/2018/credentials/v1'],
-              type: ['VerifiableCredential', credential.credentialType],
-              issuer: credential.issuerDid.did,
-              credentialSubject: {
-                id: credential.holderDid.did,
-                ...claims,
-              },
-              issuanceDate: proof.created,
-            });
+            if (!checks.signature) {
+              const publicKey = extractPublicKeyFromDid(credential.issuerDid.did);
+              const credentialData = JSON.stringify({
+                '@context': ['https://www.w3.org/2018/credentials/v1'],
+                type: ['VerifiableCredential', credential.credentialType],
+                issuer: credential.issuerDid.did,
+                credentialSubject: {
+                  id: credential.holderDid.did,
+                  ...claims,
+                },
+                issuanceDate: proof.created,
+              });
 
-            const reconstructedHash = createHash('sha256').update(credentialData).digest('hex');
-            if (reconstructedHash === proof.signedDataHash) {
-              const sigValid = verifyEd25519Proof(
-                { proofValue: proof.proofValue, verificationMethod: proof.verificationMethod },
-                credentialData,
-                publicKey
-              );
-              checks.signature = {
-                passed: sigValid,
-                detail: sigValid
-                  ? 'Ed25519Signature2020 cryptographically verified'
-                  : 'Ed25519 signature invalid',
-              };
-            } else {
-              checks.signature = { passed: false, detail: 'Signed data hash mismatch' };
+              const reconstructedHash = createHash('sha256').update(credentialData).digest('hex');
+              if (reconstructedHash === proof.signedDataHash) {
+                const sigValid = verifyEd25519Proof(
+                  { proofValue: proof.proofValue, verificationMethod: proof.verificationMethod },
+                  credentialData,
+                  publicKey
+                );
+                checks.signature = {
+                  passed: sigValid,
+                  detail: sigValid
+                    ? 'Ed25519Signature2020 cryptographically verified'
+                    : 'Ed25519 signature invalid',
+                };
+              } else {
+                checks.signature = { passed: false, detail: 'Signed data hash mismatch' };
+              }
             }
           }
         } else {

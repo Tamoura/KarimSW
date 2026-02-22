@@ -65,6 +65,16 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
         throw new AppError(404, 'not-found', 'Holder DID not found');
       }
 
+      if (holderDid.status !== 'ACTIVE') {
+        throw new AppError(400, 'bad-request', 'Holder DID is not active');
+      }
+
+      // Enforce claims size limit (64KB max before encryption)
+      const claimsJson = JSON.stringify(body.claims);
+      if (claimsJson.length > 65536) {
+        throw new AppError(400, 'bad-request', 'Claims payload exceeds maximum size of 64KB');
+      }
+
       // Encrypt claims
       const encryptedClaims = encryptClaims(body.claims);
 
