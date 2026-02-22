@@ -142,10 +142,55 @@ export function extractPublicKeyFromDid(did: string): Uint8Array {
   return base58Decode(parts[2]);
 }
 
+export interface VerificationMethodEntry {
+  id: string;
+  type: string;
+  controller: string;
+  publicKeyMultibase: string;
+  revoked?: boolean;
+}
+
+export interface ServiceEntry {
+  id: string;
+  type: string;
+  serviceEndpoint: string;
+}
+
+export interface BuildDidDocumentOptions {
+  verificationMethods?: VerificationMethodEntry[];
+  services?: ServiceEntry[];
+  activeKeyId?: string;
+}
+
 /**
  * Build a W3C DID Core 1.0 compliant DID Document.
+ *
+ * Supports multiple verification methods (for key rotation) and services.
+ * When options are provided, they override the default single-key document.
  */
-export function buildDidDocument(did: string, publicKey: Uint8Array) {
+export function buildDidDocument(
+  did: string,
+  publicKey: Uint8Array,
+  options?: BuildDidDocumentOptions
+) {
+  const defaultKeyId = `${did}#key-1`;
+
+  if (options?.verificationMethods) {
+    const activeId = options.activeKeyId || defaultKeyId;
+    return {
+      '@context': [
+        'https://www.w3.org/ns/did/v1',
+        'https://w3id.org/security/suites/ed25519-2020/v1',
+      ],
+      id: did,
+      verificationMethod: options.verificationMethods,
+      authentication: [activeId],
+      assertionMethod: [activeId],
+      keyAgreement: [],
+      service: options.services || [],
+    };
+  }
+
   const publicKeyMultibase = multibaseEncode(publicKey);
 
   return {
@@ -156,14 +201,14 @@ export function buildDidDocument(did: string, publicKey: Uint8Array) {
     id: did,
     verificationMethod: [
       {
-        id: `${did}#key-1`,
+        id: defaultKeyId,
         type: 'Ed25519VerificationKey2020',
         controller: did,
         publicKeyMultibase,
       },
     ],
-    authentication: [`${did}#key-1`],
-    assertionMethod: [`${did}#key-1`],
+    authentication: [defaultKeyId],
+    assertionMethod: [defaultKeyId],
     keyAgreement: [],
     service: [],
   };

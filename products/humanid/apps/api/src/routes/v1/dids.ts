@@ -19,6 +19,8 @@ import {
   buildDidFromPublicKey,
   buildDidDocument,
   serializeKeyPair,
+  multibaseEncode,
+  VerificationMethodEntry,
 } from '../../utils/did-crypto.js';
 import { encryptPrivateKey } from '../../utils/encryption.js';
 
@@ -214,6 +216,137 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
           detail: error.errors.map((e) => e.message).join('; '),
           request_id: request.id,
         });
+      }
+      throw error;
+    }
+  });
+
+  // POST /api/v1/dids/:id/rotate - Rotate DID key pair
+  fastify.post('/:id/rotate', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+
+      const { id } = request.params as { id: string };
+
+      const existing = await fastify.prisma.dID.findFirst({
+        where: { id, userId: request.currentUser!.id },
+        include: {
+          documents: {
+            orderBy: { version: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!existing) {
+        throw new AppError(404, 'not-found', 'DID not found');
+      }
+
+      if (existing.status !== 'ACTIVE') {
+        throw new AppError(
+          400,
+          'bad-request',
+          `Cannot rotate key for a ${existing.status.toLowerCase()} DID`
+        );
+      }
+
+      // Generate new key pair
+      const newKeyPair = generateEd25519KeyPair();
+      const serialized = serializeKeyPair(newKeyPair);
+      const encryptedNewKey = encryptPrivateKey(serialized.privateKeyHex);
+
+      // Build updated DID document with old + new keys
+      const latestDoc = existing.documents[0];
+      const currentVersion = latestDoc?.version || 1;
+      const newVersion = currentVersion + 1;
+      const newKeyId = `${existing.did}#key-${newVersion}`;
+
+      // Collect existing verification methods and mark them all as revoked
+      const existingVMs: VerificationMethodEntry[] =
+        latestDoc?.document &&
+        (latestDoc.document as Record<string, unknown>).verificationMethod
+          ? (
+              (latestDoc.document as Record<string, unknown>)
+                .verificationMethod as VerificationMethodEntry[]
+            ).map((vm) => ({ ...vm, revoked: true }))
+          : [
+              {
+                id: `${existing.did}#key-1`,
+                type: 'Ed25519VerificationKey2020',
+                controller: existing.did,
+                publicKeyMultibase: multibaseEncode(
+                  Buffer.from(existing.publicKey, 'base64')
+                ),
+                revoked: true,
+              },
+            ];
+
+      // Add new key
+      const newVM: VerificationMethodEntry = {
+        id: newKeyId,
+        type: 'Ed25519VerificationKey2020',
+        controller: existing.did,
+        publicKeyMultibase: multibaseEncode(newKeyPair.publicKey),
+      };
+
+      const verificationMethods = [...existingVMs, newVM];
+
+      // Carry forward services from current document
+      const currentServices =
+        latestDoc?.document &&
+        (latestDoc.document as Record<string, unknown>).service
+          ? ((latestDoc.document as Record<string, unknown>).service as Array<{
+              id: string;
+              type: string;
+              serviceEndpoint: string;
+            }>)
+          : [];
+
+      const document = buildDidDocument(existing.did, newKeyPair.publicKey, {
+        verificationMethods,
+        activeKeyId: newKeyId,
+        services: currentServices,
+      });
+
+      const documentHash = createHash('sha256')
+        .update(JSON.stringify(document))
+        .digest('hex');
+
+      // Update DID record and create new document version in a transaction
+      await fastify.prisma.$transaction([
+        fastify.prisma.dID.update({
+          where: { id },
+          data: {
+            publicKey: serialized.publicKeyBase58,
+            encryptedPrivateKey: encryptedNewKey,
+          },
+        }),
+        fastify.prisma.dIDDocument.create({
+          data: {
+            didId: id,
+            version: newVersion,
+            document,
+            documentHash,
+          },
+        }),
+      ]);
+
+      logger.info('DID key rotated', {
+        didId: id,
+        newVersion,
+        userId: request.currentUser!.id,
+      });
+
+      return reply.send({
+        id: existing.id,
+        did: existing.did,
+        publicKey: serialized.publicKeyBase58,
+        documentVersion: newVersion,
+        status: existing.status,
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
       }
       throw error;
     }
