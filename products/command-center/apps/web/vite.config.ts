@@ -13,11 +13,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: [
-      'react-markdown',
-      'remark-gfm',
-      'rehype-raw',
-      'mermaid',
-    ],
+    exclude: ['mermaid', 'react-markdown', 'remark-gfm', 'rehype-raw'],
   },
 });
