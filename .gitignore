@@ -9,4 +9,5 @@ coverage/
 !.env.example
 .next/
 *.tsbuildinfo
+vite.config.ts.timestamp-*
 .claude.bak.*
