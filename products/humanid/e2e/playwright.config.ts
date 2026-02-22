@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'path';
 
 /**
  * HumanID Playwright E2E configuration.
@@ -10,6 +11,10 @@ import { defineConfig, devices } from '@playwright/test';
  *       npm run test:headed — visible browser
  *       npm run test:smoke  — smoke suite only
  */
+
+// Absolute paths from this config file — avoids shell `cd` issues in CI.
+const apiDir = path.join(__dirname, '../apps/api');
+const webDir = path.join(__dirname, '../apps/web');
 
 export default defineConfig({
   testDir: './tests',
@@ -43,15 +48,22 @@ export default defineConfig({
 
   webServer: [
     {
-      command: 'cd ../apps/api && npm run dev',
+      // Use tsx directly (no watch mode in CI) with explicit cwd.
+      command: 'node_modules/.bin/tsx src/index.ts',
+      cwd: apiDir,
       port: 5013,
       reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
       timeout: 120_000,
     },
     {
-      command: 'cd ../apps/web && npm run dev',
+      command: 'npm run dev',
+      cwd: webDir,
       port: 3117,
       reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
       // Next.js compilation in CI can be slow — allow up to 3 minutes.
       timeout: 180_000,
     },
