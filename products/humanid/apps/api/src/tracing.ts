@@ -36,11 +36,23 @@ export interface TracingOptions {
 
 let _provider: NodeTracerProvider | null = null;
 
+/** Return the active provider, or null if none is initialised. */
+export function getProvider(): NodeTracerProvider | null {
+  return _provider;
+}
+
 /**
  * Initialise the OTel SDK. Call once at process startup.
+ * If a provider already exists it is shut down first to prevent leaks (RISK-028).
  * Returns the provider so callers can shut it down cleanly.
  */
 export function initTracing(opts: TracingOptions = {}): NodeTracerProvider {
+  // Guard: shut down any existing provider to prevent singleton leak (RISK-028)
+  if (_provider) {
+    _provider.shutdown();
+    _provider = null;
+  }
+
   const serviceName = opts.serviceName ?? process.env.OTEL_SERVICE_NAME ?? 'humanid-api';
   const serviceVersion = opts.serviceVersion ?? process.env.npm_package_version ?? '1.0.0';
   const enabled = opts.enabled ?? true;
