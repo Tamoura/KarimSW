@@ -135,12 +135,28 @@ const rectifySchema = z.object({
 // Routes
 // ---------------------------------------------------------------------------
 
+// Per-user rate limit helper — prevents abuse of sensitive GDPR operations.
+async function checkUserRateLimit(
+  fastify: { redis?: any },
+  key: string,
+  maxPerHour: number,
+): Promise<void> {
+  if (!fastify.redis) return;
+  const attempts = await fastify.redis.incr(key);
+  if (attempts === 1) await fastify.redis.expire(key, 3600);
+  if (attempts > maxPerHour) {
+    throw new AppError(429, 'rate-limited', 'Too many requests. Try again later.');
+  }
+}
+
 const gdprRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/me/data — Art. 15 right of access
   fastify.get('/data', async (request, reply) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
+
+      await checkUserRateLimit(fastify, `gdpr:data:${userId}`, 10);
 
       const data = await collectUserData(fastify, userId);
 
@@ -162,6 +178,8 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
+
+      await checkUserRateLimit(fastify, `gdpr:export:${userId}`, 5);
 
       const data = await collectUserData(fastify, userId);
 
@@ -189,6 +207,16 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
+
+      // 3 attempts per day — erasure is a one-shot operation.
+      if (fastify.redis) {
+        const key = `gdpr:delete:${userId}`;
+        const attempts = await fastify.redis.incr(key);
+        if (attempts === 1) await fastify.redis.expire(key, 86400);
+        if (attempts > 3) {
+          throw new AppError(429, 'rate-limited', 'Too many delete requests. Try again tomorrow.');
+        }
+      }
 
       // Revoke the current access token (add to blocklist) so it cannot be
       // reused even though the user row will be gone (belt-and-suspenders).
@@ -229,6 +257,8 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
+
+      await checkUserRateLimit(fastify, `gdpr:rectify:${userId}`, 10);
 
       let body: z.infer<typeof rectifySchema>;
       try {
@@ -285,6 +315,8 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
+
+      await checkUserRateLimit(fastify, `gdpr:restrict:${userId}`, 10);
 
       const user = await fastify.prisma.user.findUnique({
         where: { id: userId },
