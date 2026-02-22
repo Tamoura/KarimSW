@@ -254,18 +254,18 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
 
   // PATCH /api/v1/me — Art. 16 Right to Rectification
   fastify.patch('/', async (request, reply) => {
+    // Rate limit by IP before JWT verification — 20 calls per hour per IP.
+    if (!fastify.redis) throw new AppError(503, 'service-unavailable', 'Rate limiting unavailable');
+    const rectifyRateKey = `gdpr:rectify:ip:${request.ip}`;
+    const rectifyCount = await fastify.redis.incr(rectifyRateKey);
+    if (rectifyCount === 1) await fastify.redis.expire(rectifyRateKey, 3600);
+    if (rectifyCount > 20) {
+      throw new AppError(429, 'rate-limited', 'Too many requests. Try again later.');
+    }
+
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
-
-      // Rate limit rectification requests: 10 per hour per user.
-      // Redis is always present in production (required on startup).
-      const rectifyKey = `gdpr:rectify:${userId}`;
-      const rectifyAttempts = await fastify.redis!.incr(rectifyKey);
-      if (rectifyAttempts === 1) await fastify.redis!.expire(rectifyKey, 3600);
-      if (rectifyAttempts > 10) {
-        throw new AppError(429, 'rate-limited', 'Too many rectification requests. Try again later.');
-      }
 
       let body: z.infer<typeof rectifySchema>;
       try {
@@ -319,18 +319,18 @@ const gdprRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/me/restrict — Art. 18 Right to Restriction of Processing
   fastify.post('/restrict', async (request, reply) => {
+    // Rate limit by IP before JWT verification — 20 calls per hour per IP.
+    if (!fastify.redis) throw new AppError(503, 'service-unavailable', 'Rate limiting unavailable');
+    const restrictRateKey = `gdpr:restrict:ip:${request.ip}`;
+    const restrictCount = await fastify.redis.incr(restrictRateKey);
+    if (restrictCount === 1) await fastify.redis.expire(restrictRateKey, 3600);
+    if (restrictCount > 20) {
+      throw new AppError(429, 'rate-limited', 'Too many requests. Try again later.');
+    }
+
     try {
       await fastify.authenticate(request);
       const userId = request.currentUser!.id;
-
-      // Rate limit restriction requests: 10 per hour per user.
-      // Redis is always present in production (required on startup).
-      const restrictKey = `gdpr:restrict:${userId}`;
-      const restrictAttempts = await fastify.redis!.incr(restrictKey);
-      if (restrictAttempts === 1) await fastify.redis!.expire(restrictKey, 3600);
-      if (restrictAttempts > 10) {
-        throw new AppError(429, 'rate-limited', 'Too many restriction requests. Try again later.');
-      }
 
       const user = await fastify.prisma.user.findUnique({
         where: { id: userId },
