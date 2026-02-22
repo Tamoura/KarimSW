@@ -206,8 +206,8 @@ jobs:
           # CLAIMS_ENCRYPTION_KEY requires exactly 64 hex characters (32 bytes for AES-256).
           # The unit-test job uses a short ASCII key because Jest bypasses index.ts startup
           # validation.  The E2E webServer runs index.ts directly, so the key must be valid.
-          # Low-entropy repeated hex string — safe for test use only. # gitleaks:allow
-          CLAIMS_ENCRYPTION_KEY: ${{ secrets.CI_CLAIMS_ENCRYPTION_KEY || 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }}
+          # CI_CLAIMS_ENCRYPTION_KEY secret contains a valid 64-hex-char test-only key.
+          CLAIMS_ENCRYPTION_KEY: ${{ secrets.CI_CLAIMS_ENCRYPTION_KEY }}
           INTERNAL_API_KEY: ${{ secrets.CI_INTERNAL_API_KEY || 'ci-test-internal-api-key' }}
           METRICS_API_KEY: ci-test-metrics-api-key
 
