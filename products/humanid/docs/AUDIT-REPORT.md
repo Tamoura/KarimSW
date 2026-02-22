@@ -62,7 +62,7 @@
 | RISK-009 | No distributed tracing | Open | **Resolved** — OTel NodeTracerProvider + BatchSpanProcessor |
 | RISK-021 | 24 npm vulnerabilities | Open | **Partially Resolved** — CI now audits at `--audit-level=high` for prod deps; dev dep vulns tracked informally |
 | RISK-027 | Playwright config missing webServer block | New | **Open** |
-| RISK-028 | OTel provider singleton leaks between test runs | New | **Open** |
+| RISK-028 | OTel provider singleton leaks between test runs | New | **Resolved** — PR #31 |
 | RISK-029 | GDPR Art. 16 (rectification) and Art. 18 (restriction) missing | New | **Open** |
 
 ### Top 3 Remaining Risks in Plain Language
@@ -228,7 +228,7 @@
 | RISK-025 | Pagination accepts negative integers | Low | **Resolved** | Various route files | `Math.max(1, page)` guard added |
 | RISK-026 | Auth tokens in localStorage (CRITICAL) | Critical | **Resolved** | `api-client.ts:11-18` | Module-level `_accessToken` variable; never touches storage |
 | RISK-027 | Playwright config missing webServer block | Medium | **Open** | `e2e/playwright.config.ts:14-46` | CI cannot run E2E tests without a live server — see B.7 |
-| RISK-028 | OTel singleton leaks between test runs | Low | **Open** | `src/tracing.ts:37` | `_provider` module variable replaced silently on repeated `initTracing()` calls |
+| RISK-028 | OTel singleton leaks between test runs | Low | **Resolved** | `src/tracing.ts:37` | Guard shuts down existing provider before re-init (PR #31) |
 | RISK-029 | GDPR Art. 16 and Art. 18 not implemented | Medium | **Open** | `routes/v1/gdpr.ts` | Right to rectification and restriction of processing absent |
 
 ---
@@ -606,5 +606,5 @@ No obviously outdated or end-of-life dependencies detected.
 | RISK-025 | Negative pagination integers | Low | Resolved | audit-remediation |
 | RISK-026 | Auth tokens in localStorage | Critical | Resolved | frontend-remediation |
 | RISK-027 | Playwright config missing webServer | Medium | **Open** | Phase 2 |
-| RISK-028 | OTel singleton test isolation | Low | **Open** | Phase 2 |
+| RISK-028 | OTel singleton test isolation | Low | **Resolved** | PR #31 |
 | RISK-029 | GDPR Art. 16 and Art. 18 missing | Medium | **Open** | Phase 2 |
