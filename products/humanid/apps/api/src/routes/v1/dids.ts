@@ -18,7 +18,6 @@ import {
   generateEd25519KeyPair,
   buildDidFromPublicKey,
   buildDidDocument,
-  base58Encode,
   serializeKeyPair,
 } from '../../utils/did-crypto.js';
 import { encryptPrivateKey } from '../../utils/encryption.js';

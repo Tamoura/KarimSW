@@ -14,7 +14,6 @@ import { logger } from '../../utils/logger.js';
 import {
   verifyEd25519Proof,
   extractPublicKeyFromDid,
-  verify as ed25519Verify,
 } from '../../utils/did-crypto.js';
 import { decryptClaims } from '../../utils/encryption.js';
 

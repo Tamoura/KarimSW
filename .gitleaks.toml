@@ -1,0 +1,17 @@
+# Gitleaks configuration for KarimSW
+# See: https://github.com/gitleaks/gitleaks#configuration
+
+title = "KarimSW Gitleaks Config"
+
+[allowlist]
+  description = "Historical CI test key false positives"
+
+  # Commit 6aa4113 introduced a 64-char all-hex test-only CI key as a workflow
+  # fallback value (CLAIMS_ENCRYPTION_KEY). It was never used in production and
+  # has been replaced by a GitHub Actions secret in subsequent commits. The key
+  # is a zero-security-value test artifact — AES-256 requires 64 hex chars and
+  # using a low-entropy value like repeated 'a' does not pass the entropy check,
+  # so the hex pattern was necessary at the time and is now permanently suppressed.
+  commits = [
+    "6aa411301712b86294c6d0205aff6be95af6c86f",
+  ]

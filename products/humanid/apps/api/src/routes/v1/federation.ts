@@ -7,6 +7,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { AppError } from '../../types/index.js';
 
 const createLinkSchema = z.object({
@@ -45,7 +46,7 @@ const federationRoutes: FastifyPluginAsync = async (fastify) => {
           direction: body.direction || 'BIDIRECTIONAL',
           externalIssuer: body.externalIssuer,
           externalSubject: body.externalSubject,
-          metadata: body.metadata,
+          metadata: body.metadata as Prisma.InputJsonValue,
         },
       });
 

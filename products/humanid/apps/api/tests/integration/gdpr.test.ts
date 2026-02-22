@@ -5,11 +5,15 @@
  *   GET    /api/v1/me/data    — structured personal data export
  *   GET    /api/v1/me/export  — downloadable JSON file attachment
  *   DELETE /api/v1/me         — account erasure (right to be forgotten)
+ *   PATCH  /api/v1/me         — data rectification (Art. 16) [RISK-029]
+ *   POST   /api/v1/me/restrict — restriction of processing (Art. 18) [RISK-029]
  *
  * GDPR Articles covered:
  *   Art. 15 — Right of access (GET /data)
- *   Art. 20 — Right to data portability (GET /export)
+ *   Art. 16 — Right to rectification (PATCH /me)
  *   Art. 17 — Right to erasure (DELETE /me)
+ *   Art. 18 — Right to restriction of processing (POST /me/restrict)
+ *   Art. 20 — Right to data portability (GET /export)
  */
 
 import { FastifyInstance } from 'fastify';
@@ -253,6 +257,160 @@ describe('GDPR Data Subject Rights - /api/v1/me', () => {
         headers: { authorization: `Bearer ${token}` },
       });
       expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // ── PATCH /api/v1/me — Art. 16 Right to Rectification ───────────────────
+
+  describe('PATCH /api/v1/me (Art. 16 — Rectification)', () => {
+    let token: string;
+
+    beforeEach(async () => {
+      ({ token } = await createUserAndLogin(holderEmail));
+    });
+
+    afterEach(async () => {
+      await cleanupUser(holderEmail);
+      await cleanupUser('gdpr-new-email@example.com');
+    });
+
+    it('returns 401 without a token', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/me',
+        payload: { email: 'no-auth@example.com' },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('updates email and returns the updated profile', async () => {
+      const newEmail = 'gdpr-new-email@example.com';
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/me',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { email: newEmail },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.email).toBe(newEmail);
+      expect(body.id).toBeDefined();
+      expect(body.role).toBeDefined();
+    });
+
+    it('returns 400 when email is invalid', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/me',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { email: 'not-a-valid-email' },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('returns 400 when no fields are provided', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/me',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {},
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('cannot update role via PATCH /me', async () => {
+      // Role field is not accepted — the endpoint only allows safe fields
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/me',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { role: 'ADMIN' },
+      });
+      // Either 400 (validation rejects unknown field) or 200 but role unchanged
+      if (res.statusCode === 200) {
+        const body = res.json();
+        expect(body.role).not.toBe('ADMIN');
+      } else {
+        expect(res.statusCode).toBe(400);
+      }
+    });
+
+    it('does not expose passwordHash in the response', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/me',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { email: holderEmail },
+      });
+      const body = res.json();
+      expect(body.passwordHash).toBeUndefined();
+      expect(body.password_hash).toBeUndefined();
+    });
+  });
+
+  // ── POST /api/v1/me/restrict — Art. 18 Right to Restriction ─────────────
+
+  describe('POST /api/v1/me/restrict (Art. 18 — Restriction of Processing)', () => {
+    let token: string;
+    let userId: string;
+
+    beforeEach(async () => {
+      ({ token, userId } = await createUserAndLogin(holderEmail));
+    });
+
+    afterEach(async () => {
+      await cleanupUser(holderEmail);
+    });
+
+    it('returns 401 without a token', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/me/restrict',
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('returns 200 and sets the processing restriction flag', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/me/restrict',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.processingRestricted).toBe(true);
+      expect(body.restrictedAt).toBeDefined();
+      expect(typeof body.restrictedAt).toBe('string');
+    });
+
+    it('persists the restriction flag in the database', async () => {
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/me/restrict',
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      // Verify persistence via GET /me/data
+      const dataRes = await app.inject({
+        method: 'GET',
+        url: '/api/v1/me/data',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(dataRes.statusCode).toBe(200);
+      const dataBody = dataRes.json();
+      const meta = dataBody.profile?.metadata as Record<string, unknown> | undefined;
+      expect(meta?.processingRestricted).toBe(true);
+    });
+
+    it('returns a message indicating restriction was applied', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/me/restrict',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const body = res.json();
+      expect(body.message).toBeDefined();
+      expect(typeof body.message).toBe('string');
     });
   });
 });

@@ -7,7 +7,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { createHash, createHmac } from 'crypto';
+import { createHmac } from 'crypto';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import { deriveHmacKey, timingSafeCompare } from '../../utils/encryption.js';

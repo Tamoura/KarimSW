@@ -7,6 +7,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { AppError } from '../../types/index.js';
 
 const createOrgDidSchema = z.object({
@@ -46,7 +47,7 @@ const orgDidRoutes: FastifyPluginAsync = async (fastify) => {
           type: body.type,
           name: body.name,
           description: body.description,
-          metadata: body.metadata,
+          metadata: body.metadata as Prisma.InputJsonValue,
         },
       });
 
@@ -88,7 +89,7 @@ const orgDidRoutes: FastifyPluginAsync = async (fastify) => {
           type: body.type,
           name: body.name,
           description: body.description,
-          metadata: body.metadata,
+          metadata: body.metadata as Prisma.InputJsonValue,
           parentOrgDidId: id,
         },
       });
@@ -189,7 +190,7 @@ const orgDidRoutes: FastifyPluginAsync = async (fastify) => {
           type: node!.type,
           name: node!.name,
           didId: node!.didId,
-          children: (node as Record<string, unknown[]>).childOrgDids?.map((c: typeof root) => buildTree(c)) || [],
+          children: (node as unknown as { childOrgDids?: typeof root[] }).childOrgDids?.map((c: typeof root) => buildTree(c)) || [],
         };
       }
 
