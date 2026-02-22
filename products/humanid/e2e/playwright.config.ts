@@ -46,13 +46,14 @@ export default defineConfig({
       command: 'cd ../apps/api && npm run dev',
       port: 5013,
       reuseExistingServer: !process.env.CI,
-      timeout: 60000,
+      timeout: 120_000,
     },
     {
       command: 'cd ../apps/web && npm run dev',
       port: 3117,
       reuseExistingServer: !process.env.CI,
-      timeout: 60000,
+      // Next.js compilation in CI can be slow — allow up to 3 minutes.
+      timeout: 180_000,
     },
   ],
 });
