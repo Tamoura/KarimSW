@@ -5,16 +5,16 @@ module.exports = {
   roots: ['<rootDir>/tests', '<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
   transform: {
-    '^.+\\.ts$': ['ts-jest', {
+    '^.+\\.tsx?$': ['ts-jest', {
       diagnostics: false,
-    }],
-    '^.+\\.js$': ['ts-jest', {
-      diagnostics: false,
-      useESM: false,
     }],
   },
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    // @noble/ed25519 v3 is pure ESM ("type": "module"). Jest 29 refuses
+    // to require() files inside ESM packages. This maps the import to a
+    // CJS shim that loads the source via vm.Script, bypassing the check.
+    '^@noble/ed25519$': '<rootDir>/tests/__shims__/noble-ed25519.cjs',
   },
   transformIgnorePatterns: [
     'node_modules/(?!@noble/ed25519/)',
