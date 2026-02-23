@@ -113,6 +113,40 @@ function validateClaimsEncryption(): ValidationResult {
 }
 
 /**
+ * Validate blockchain configuration (all optional — required only when anchoring is enabled).
+ */
+function validateBlockchain(): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const rpcUrl = process.env.POLYGON_RPC_URL;
+  const privateKey = process.env.POLYGON_PRIVATE_KEY;
+  const contractAddress = process.env.POLYGON_CONTRACT_ADDRESS;
+
+  const anySet = rpcUrl || privateKey || contractAddress;
+  const allSet = rpcUrl && privateKey && contractAddress;
+
+  if (anySet && !allSet) {
+    const missing: string[] = [];
+    if (!rpcUrl) missing.push('POLYGON_RPC_URL');
+    if (!privateKey) missing.push('POLYGON_PRIVATE_KEY');
+    if (!contractAddress) missing.push('POLYGON_CONTRACT_ADDRESS');
+    errors.push(`Blockchain anchoring partially configured - missing: ${missing.join(', ')}`);
+    errors.push('Set all three POLYGON_* variables or none');
+  }
+
+  if (!anySet) {
+    warnings.push('Blockchain anchoring disabled (POLYGON_RPC_URL not set)');
+  }
+
+  if (privateKey && !privateKey.startsWith('0x')) {
+    errors.push('POLYGON_PRIVATE_KEY must start with 0x');
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+/**
  * Validate all environment variables.
  * Throws on validation failure to prevent startup with bad config.
  */
@@ -125,6 +159,7 @@ export function validateEnvironment(): void {
     { name: 'Redis Configuration', result: validateRedis() },
     { name: 'API Key HMAC', result: validateApiKeyHmac() },
     { name: 'Claims Encryption', result: validateClaimsEncryption() },
+    { name: 'Blockchain Anchoring', result: validateBlockchain() },
   ];
 
   let hasErrors = false;
