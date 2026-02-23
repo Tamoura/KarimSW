@@ -439,4 +439,71 @@ describe('env-validator - validateEnvironment()', () => {
     // Should succeed with warning but not error
     expect(() => validateEnvironment()).not.toThrow();
   });
+
+  it('should throw when blockchain env is partially configured', () => {
+    process.env.DATABASE_URL = 'postgresql://localhost/test';
+    process.env.JWT_SECRET = 'a'.repeat(64);
+    process.env.NODE_ENV = 'test';
+    // Set only one of three required blockchain vars
+    process.env.POLYGON_RPC_URL = 'https://rpc-amoy.polygon.technology';
+    delete process.env.POLYGON_PRIVATE_KEY;
+    delete process.env.POLYGON_CONTRACT_ADDRESS;
+
+    expect(() => validateEnvironment()).toThrow('Environment validation failed');
+
+    delete process.env.POLYGON_RPC_URL;
+  });
+
+  it('should throw when POLYGON_PRIVATE_KEY does not start with 0x', () => {
+    process.env.DATABASE_URL = 'postgresql://localhost/test';
+    process.env.JWT_SECRET = 'a'.repeat(64);
+    process.env.NODE_ENV = 'test';
+    process.env.POLYGON_RPC_URL = 'https://rpc-amoy.polygon.technology';
+    process.env.POLYGON_PRIVATE_KEY = 'a'.repeat(64); // Missing 0x prefix
+    process.env.POLYGON_CONTRACT_ADDRESS = '0x' + '1'.repeat(40);
+
+    expect(() => validateEnvironment()).toThrow('Environment validation failed');
+
+    delete process.env.POLYGON_RPC_URL;
+    delete process.env.POLYGON_PRIVATE_KEY;
+    delete process.env.POLYGON_CONTRACT_ADDRESS;
+  });
+
+  it('should not throw when all blockchain vars are set correctly', () => {
+    process.env.DATABASE_URL = 'postgresql://localhost/test';
+    process.env.JWT_SECRET = 'a'.repeat(64);
+    process.env.NODE_ENV = 'test';
+    process.env.POLYGON_RPC_URL = 'https://rpc-amoy.polygon.technology';
+    process.env.POLYGON_PRIVATE_KEY = '0x' + 'a'.repeat(64);
+    process.env.POLYGON_CONTRACT_ADDRESS = '0x' + '1'.repeat(40);
+
+    expect(() => validateEnvironment()).not.toThrow();
+
+    delete process.env.POLYGON_RPC_URL;
+    delete process.env.POLYGON_PRIVATE_KEY;
+    delete process.env.POLYGON_CONTRACT_ADDRESS;
+  });
+
+  it('should warn when no blockchain vars are set (anchoring disabled)', () => {
+    process.env.DATABASE_URL = 'postgresql://localhost/test';
+    process.env.JWT_SECRET = 'a'.repeat(64);
+    process.env.NODE_ENV = 'test';
+    delete process.env.POLYGON_RPC_URL;
+    delete process.env.POLYGON_PRIVATE_KEY;
+    delete process.env.POLYGON_CONTRACT_ADDRESS;
+
+    // Should not throw — just warns
+    expect(() => validateEnvironment()).not.toThrow();
+  });
+
+  it('should throw when CLAIMS_ENCRYPTION_KEY has wrong length', () => {
+    process.env.DATABASE_URL = 'postgresql://localhost/test';
+    process.env.JWT_SECRET = 'a'.repeat(64);
+    process.env.NODE_ENV = 'test';
+    process.env.CLAIMS_ENCRYPTION_KEY = 'tooshort';
+
+    expect(() => validateEnvironment()).toThrow('Environment validation failed');
+
+    delete process.env.CLAIMS_ENCRYPTION_KEY;
+  });
 });
