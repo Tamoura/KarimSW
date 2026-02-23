@@ -29,6 +29,12 @@ const createRequestSchema = z.object({
   expiresInHours: z.number().min(1).max(720).optional().default(24),
 });
 
+const respondSchema = z.object({
+  credentialId: z.string().uuid('Invalid credential ID'),
+  holderDidId: z.string().uuid('Invalid holder DID ID'),
+  disclosedAttributes: z.array(z.string().min(1)).min(1, 'At least one disclosed attribute required'),
+});
+
 const verifyRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/verify/credentials - Verify a credential (4-step pipeline)
   fastify.post('/credentials', async (request, reply) => {
@@ -308,6 +314,202 @@ const verifyRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (error) {
       if (error instanceof AppError) {
         return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
+  // POST /api/v1/verify/requests/:id/respond - Holder responds with a presentation
+  fastify.post('/requests/:id/respond', async (request, reply) => {
+    try {
+      await fastify.authenticate(request);
+
+      const { id } = request.params as { id: string };
+      const body = respondSchema.parse(request.body);
+      const userId = request.currentUser!.id;
+
+      // Verify holder DID belongs to authenticated user
+      const holderDid = await fastify.prisma.dID.findFirst({
+        where: { id: body.holderDidId, userId },
+      });
+
+      if (!holderDid) {
+        throw new AppError(403, 'forbidden', 'Holder DID does not belong to authenticated user');
+      }
+
+      // Find the verification request
+      const verificationRequest = await fastify.prisma.verificationRequest.findUnique({
+        where: { id },
+      });
+
+      if (!verificationRequest) {
+        throw new AppError(404, 'not-found', 'Verification request not found');
+      }
+
+      // Check request is not expired
+      if (new Date(verificationRequest.expiresAt) < new Date()) {
+        throw new AppError(400, 'bad-request', 'Verification request has expired');
+      }
+
+      // Check request hasn't already been responded to
+      if (verificationRequest.status !== 'CREATED' && verificationRequest.status !== 'SENT') {
+        throw new AppError(400, 'bad-request', 'Verification request has already been responded to');
+      }
+
+      // Verify the request is for this holder's DID
+      if (verificationRequest.holderDid !== holderDid.did) {
+        throw new AppError(403, 'forbidden', 'This verification request is not for your DID');
+      }
+
+      // Fetch the credential
+      const credential = await fastify.prisma.credential.findUnique({
+        where: { id: body.credentialId },
+        include: {
+          issuerDid: { select: { did: true, status: true, publicKey: true } },
+          holderDid: { select: { did: true, status: true } },
+        },
+      });
+
+      if (!credential) {
+        throw new AppError(404, 'not-found', 'Credential not found');
+      }
+
+      // BOLA protection: verify credential belongs to the specified holder DID
+      if (credential.holderDidId !== body.holderDidId) {
+        throw new AppError(403, 'forbidden', 'Credential does not belong to the specified holder DID');
+      }
+
+      // Create the presentation
+      const presentation = await fastify.prisma.credentialPresentation.create({
+        data: {
+          credentialId: body.credentialId,
+          holderDidId: body.holderDidId,
+          verificationRequestId: id,
+          disclosedAttributes: body.disclosedAttributes,
+          proofType: 'SELECTIVE',
+          status: 'ACTIVE',
+          presentedAt: new Date(),
+        },
+      });
+
+      // Run 4-step verification pipeline on the credential
+      const checks: Record<string, { passed: boolean; detail: string }> = {};
+
+      // Step 1: Signature verification
+      try {
+        const proof = credential.proof as {
+          proofValue?: string;
+          verificationMethod?: string;
+          signedDataHash?: string;
+          legacy?: boolean;
+          created?: string;
+        };
+        if (proof.proofValue && proof.verificationMethod && proof.signedDataHash) {
+          const hashMatch = credential.credentialHash === proof.signedDataHash;
+          if (!hashMatch) {
+            checks.signature = { passed: false, detail: 'Credential data has been tampered with' };
+          } else {
+            let claims: Record<string, unknown>;
+            try {
+              claims = decryptClaims(credential.encryptedClaims);
+            } catch {
+              checks.signature = { passed: false, detail: 'Failed to decrypt credential claims for signature verification' };
+              // Skip further signature checks — cannot reconstruct signed data
+              claims = {};
+            }
+
+            if (!checks.signature) {
+              const publicKey = extractPublicKeyFromDid(credential.issuerDid.did);
+              const credentialData = JSON.stringify({
+                '@context': ['https://www.w3.org/2018/credentials/v1'],
+                type: ['VerifiableCredential', credential.credentialType],
+                issuer: credential.issuerDid.did,
+                credentialSubject: {
+                  id: credential.holderDid.did,
+                  ...claims,
+                },
+                issuanceDate: proof.created,
+              });
+
+              const reconstructedHash = createHash('sha256').update(credentialData).digest('hex');
+              if (reconstructedHash === proof.signedDataHash) {
+                const sigValid = verifyEd25519Proof(
+                  { proofValue: proof.proofValue, verificationMethod: proof.verificationMethod },
+                  credentialData,
+                  publicKey
+                );
+                checks.signature = {
+                  passed: sigValid,
+                  detail: sigValid
+                    ? 'Ed25519Signature2020 cryptographically verified'
+                    : 'Ed25519 signature invalid',
+                };
+              } else {
+                checks.signature = { passed: false, detail: 'Signed data hash mismatch' };
+              }
+            }
+          }
+        } else {
+          checks.signature = { passed: false, detail: 'Missing proof data' };
+        }
+      } catch {
+        checks.signature = { passed: false, detail: 'Signature verification error' };
+      }
+
+      // Step 2: Issuer trust
+      checks.issuerTrust = credential.issuerDid.status === 'ACTIVE'
+        ? { passed: true, detail: 'Issuer DID is active' }
+        : { passed: false, detail: `Issuer DID is ${credential.issuerDid.status}` };
+
+      // Step 3: Revocation
+      checks.revocation = credential.status !== 'REVOKED'
+        ? { passed: true, detail: 'Credential is not revoked' }
+        : { passed: false, detail: 'Credential has been revoked' };
+
+      // Step 4: Expiry
+      if (credential.expiresAt && new Date(credential.expiresAt) < new Date()) {
+        checks.expiry = { passed: false, detail: 'Credential has expired' };
+      } else {
+        checks.expiry = { passed: true, detail: credential.expiresAt ? 'Within validity period' : 'No expiry set' };
+      }
+
+      const verified = Object.values(checks).every((c) => c.passed);
+      const newStatus = verified ? 'VERIFIED' : 'FAILED';
+
+      // Update verification request status
+      await fastify.prisma.verificationRequest.update({
+        where: { id },
+        data: {
+          status: newStatus,
+          respondedAt: new Date(),
+          result: { verified, checks },
+          failureReason: verified ? null : Object.entries(checks).filter(([, v]) => !v.passed).map(([k, v]) => `${k}: ${v.detail}`).join('; '),
+        },
+      });
+
+      logger.info('Verification request responded', {
+        requestId: id,
+        presentationId: presentation.id,
+        verified,
+      });
+
+      return reply.send({
+        requestId: id,
+        presentationId: presentation.id,
+        status: newStatus,
+        verificationResult: { verified, checks },
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({
+          type: 'https://humanid.dev/errors/validation-error',
+          title: 'Validation Error',
+          status: 400,
+          detail: error.errors.map((e) => e.message).join('; '),
+          request_id: request.id,
+        });
       }
       throw error;
     }

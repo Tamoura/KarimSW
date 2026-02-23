@@ -350,6 +350,20 @@ describe('Phase 2 Risk Remediation Fixes', () => {
       }
     });
 
+    it('should throw when old key has invalid length', () => {
+      const encrypted = encrypt('test-data');
+      expect(() => reEncrypt(encrypted, 'tooshort', NEW_KEY_HEX)).toThrow(
+        'Old encryption key must be exactly 64 hex characters'
+      );
+    });
+
+    it('should throw when new key has invalid length', () => {
+      const encrypted = encrypt('test-data');
+      expect(() => reEncrypt(encrypted, OLD_KEY_HEX, 'tooshort')).toThrow(
+        'New encryption key must be exactly 64 hex characters'
+      );
+    });
+
     it('non-admin user receives 403 when calling POST /api/v1/developer/rotate-encryption-key', async () => {
       const res = await app.inject({
         method: 'POST',

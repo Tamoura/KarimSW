@@ -65,6 +65,16 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
         throw new AppError(404, 'not-found', 'Holder DID not found');
       }
 
+      if (holderDid.status !== 'ACTIVE') {
+        throw new AppError(400, 'bad-request', 'Holder DID is not active');
+      }
+
+      // Enforce claims size limit (64KB max before encryption)
+      const claimsJson = JSON.stringify(body.claims);
+      if (claimsJson.length > 65536) {
+        throw new AppError(400, 'bad-request', 'Claims payload exceeds maximum size of 64KB');
+      }
+
       // Encrypt claims
       const encryptedClaims = encryptClaims(body.claims);
 
@@ -117,6 +127,17 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
           },
         }),
       ]);
+
+      // Auto-queue blockchain anchor for the credential
+      await fastify.prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'CREDENTIAL',
+          entityId: credential.id,
+          chain: 'POLYGON',
+          dataHash: credentialHash,
+          status: 'PENDING',
+        },
+      });
 
       logger.info('Credential issued', {
         credentialId: credential.id,
@@ -324,6 +345,20 @@ const credentialRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           status: 'REVOKED',
           revokedAt: new Date(),
+        },
+      });
+
+      // Auto-queue blockchain anchor for revocation
+      const revocationHash = createHash('sha256')
+        .update(JSON.stringify({ credentialId: id, revokedAt: updated.revokedAt?.toISOString() }))
+        .digest('hex');
+      await fastify.prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'REVOCATION',
+          entityId: id,
+          chain: 'POLYGON',
+          dataHash: revocationHash,
+          status: 'PENDING',
         },
       });
 
