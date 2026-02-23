@@ -6,6 +6,7 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AppError } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
@@ -308,7 +309,7 @@ const developerRoutes: FastifyPluginAsync = async (fastify) => {
         });
 
         await fastify.prisma.dIDDocument.create({
-          data: { didId: didRecord.id, version: 1, document, documentHash },
+          data: { didId: didRecord.id, version: 1, document: document as unknown as Prisma.InputJsonValue, documentHash },
         });
 
         testDids.push({ id: didRecord.id, did: didRecord.did });

@@ -10,6 +10,7 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { createHash } from 'crypto';
 import { AppError } from '../../types/index.js';
@@ -81,7 +82,7 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           didId: didRecord.id,
           version: 1,
-          document,
+          document: document as unknown as Prisma.InputJsonValue,
           documentHash,
         },
       });
@@ -351,7 +352,7 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
           data: {
             didId: id,
             version: newVersion,
-            document,
+            document: document as unknown as Prisma.InputJsonValue,
             documentHash,
           },
         });
@@ -470,7 +471,7 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           didId: id,
           version: newVersion,
-          document,
+          document: document as unknown as Prisma.InputJsonValue,
           documentHash,
         },
       });
@@ -588,7 +589,7 @@ const didRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           didId: id,
           version: newVersion,
-          document,
+          document: document as unknown as Prisma.InputJsonValue,
           documentHash,
         },
       });
