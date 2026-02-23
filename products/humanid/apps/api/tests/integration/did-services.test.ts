@@ -160,6 +160,20 @@ describe('DID Service Endpoints', () => {
       expect(doc.service).toHaveLength(2);
     });
 
+    it('should return 404 for non-existent DID when adding service', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/dids/nonexistent-did-id/services',
+        headers: { authorization: `Bearer ${accessToken}` },
+        payload: {
+          type: 'TestService',
+          serviceEndpoint: 'https://example.com/test',
+        },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
     it('should reject invalid service payload', async () => {
       const res = await app.inject({
         method: 'POST',
@@ -252,6 +266,16 @@ describe('DID Service Endpoints', () => {
       });
       const doc = resolveRes.json().document;
       expect(doc.service).toHaveLength(0);
+    });
+
+    it('should return 404 for non-existent DID when deleting service', async () => {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/api/v1/dids/nonexistent-did-id/services/some-service',
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+
+      expect(res.statusCode).toBe(404);
     });
 
     it('should return 404 for non-existent service ID', async () => {
