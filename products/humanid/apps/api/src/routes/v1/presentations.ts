@@ -21,7 +21,7 @@ import {
   deserializePrivateKey,
 } from '../../utils/did-crypto.js';
 import { decryptClaims, decryptPrivateKey } from '../../utils/encryption.js';
-import { verifyProof, isValidCircuitType } from '../../services/zkp.service.js';
+import { verifyProof } from '../../services/zkp.service.js';
 
 // ==================== Zod Schemas ====================
 
