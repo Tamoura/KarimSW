@@ -196,6 +196,12 @@ describe('Anchoring Service', () => {
       expect(result.errorMessage).toContain('reverted');
     });
 
+    it('should throw if anchor not found', async () => {
+      await expect(
+        checkConfirmation(prisma, 'nonexistent-id', TEST_CONFIG)
+      ).rejects.toThrow('Anchor not found');
+    });
+
     it('should throw if anchor is not SUBMITTED', async () => {
       await prisma.blockchainAnchor.update({
         where: { id: anchorId },
@@ -240,6 +246,12 @@ describe('Anchoring Service', () => {
 
       expect(result.status).toBe('FAILED');
       expect(result.errorMessage).toContain('max retries');
+    });
+
+    it('should throw if anchor not found', async () => {
+      await expect(
+        retryFailed(prisma, 'nonexistent-id', TEST_CONFIG)
+      ).rejects.toThrow('Anchor not found');
     });
 
     it('should throw if anchor is not FAILED', async () => {

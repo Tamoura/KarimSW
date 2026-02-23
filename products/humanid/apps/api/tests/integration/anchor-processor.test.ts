@@ -118,6 +118,84 @@ describe('Anchor Processor', () => {
       expect(calledIds).toContain(anchor.id);
     });
 
+    it('should continue processing when submitAnchor throws', async () => {
+      // Set all existing PENDING to CONFIRMED to isolate
+      await prisma.blockchainAnchor.updateMany({
+        where: { status: 'PENDING' },
+        data: { status: 'CONFIRMED' },
+      });
+
+      await prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'DID',
+          entityId: entityPrefix + '-err-submit-1',
+          chain: 'POLYGON',
+          dataHash: 'e'.repeat(64),
+          status: 'PENDING',
+        },
+      });
+      await prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'DID',
+          entityId: entityPrefix + '-err-submit-2',
+          chain: 'POLYGON',
+          dataHash: 'f'.repeat(64),
+          status: 'PENDING',
+        },
+      });
+
+      // First call throws, second succeeds
+      mockSubmitAnchor
+        .mockRejectedValueOnce(new Error('rpc error'))
+        .mockResolvedValueOnce({ status: 'SUBMITTED' });
+
+      await processAnchorsOnce(prisma, TEST_CONFIG);
+
+      // Both should have been called despite first failure
+      expect(mockSubmitAnchor).toHaveBeenCalledTimes(2);
+    });
+
+    it('should continue processing when checkConfirmation throws', async () => {
+      await prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'DID',
+          entityId: entityPrefix + '-err-confirm',
+          chain: 'POLYGON',
+          dataHash: 'e'.repeat(64),
+          status: 'SUBMITTED',
+          transactionHash: '0xerr1',
+        },
+      });
+
+      mockCheckConfirmation.mockRejectedValueOnce(new Error('rpc error'));
+
+      // Should not throw
+      await processAnchorsOnce(prisma, TEST_CONFIG);
+
+      expect(mockCheckConfirmation).toHaveBeenCalled();
+    });
+
+    it('should continue processing when retryFailed throws', async () => {
+      await prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'DID',
+          entityId: entityPrefix + '-err-retry',
+          chain: 'POLYGON',
+          dataHash: 'e'.repeat(64),
+          status: 'FAILED',
+          retryCount: 1,
+          errorMessage: 'gas too low',
+        },
+      });
+
+      mockRetryFailed.mockRejectedValueOnce(new Error('rpc error'));
+
+      // Should not throw
+      await processAnchorsOnce(prisma, TEST_CONFIG);
+
+      expect(mockRetryFailed).toHaveBeenCalled();
+    });
+
     it('should NOT retry FAILED anchors with retryCount >= 3', async () => {
       await prisma.blockchainAnchor.create({
         data: {

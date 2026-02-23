@@ -177,6 +177,43 @@ describe('On-Chain Verification Enhancement', () => {
     });
   });
 
+  describe('GET /api/v1/anchoring/:id/verify (with fake RPC)', () => {
+    it('should gracefully handle unreachable RPC for CONFIRMED anchor', async () => {
+      const anchor = await prisma.blockchainAnchor.create({
+        data: {
+          entityType: 'DID',
+          entityId: testDidId,
+          chain: 'POLYGON',
+          dataHash: 'f'.repeat(64),
+          status: 'CONFIRMED',
+          transactionHash: '0xrpctest123',
+          blockNumber: '999',
+          anchoredAt: new Date(),
+        },
+      });
+
+      // Set a fake RPC URL to exercise the on-chain verification branch
+      process.env.POLYGON_RPC_URL = 'http://127.0.0.1:19999';
+      try {
+        const res = await app.inject({
+          method: 'GET',
+          url: `/api/v1/anchoring/${anchor.id}/verify`,
+          headers: { authorization: `Bearer ${devToken}` },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        // RPC is unreachable, so onChainVerified stays false
+        expect(body.onChainVerified).toBe(false);
+        expect(body.anchored).toBe(true);
+        expect(body.status).toBe('CONFIRMED');
+      } finally {
+        delete process.env.POLYGON_RPC_URL;
+        await prisma.blockchainAnchor.delete({ where: { id: anchor.id } });
+      }
+    });
+  });
+
   describe('GET /api/v1/anchoring/chains (enhanced)', () => {
     it('should return chain stats with rpcConnected field', async () => {
       const res = await app.inject({
@@ -195,6 +232,27 @@ describe('On-Chain Verification Enhancement', () => {
       expect(polygon).toHaveProperty('rpcConnected');
       expect(polygon).toHaveProperty('totalAnchors');
       expect(polygon).toHaveProperty('confirmedAnchors');
+    });
+
+    it('should gracefully handle unreachable RPC in chain health', async () => {
+      process.env.POLYGON_RPC_URL = 'http://127.0.0.1:19999';
+      try {
+        const res = await app.inject({
+          method: 'GET',
+          url: '/api/v1/anchoring/chains',
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        const polygon = body.chains.find(
+          (c: { name: string }) => c.name === 'POLYGON'
+        );
+        // RPC is unreachable, so rpcConnected should be false
+        expect(polygon.rpcConnected).toBe(false);
+        expect(polygon.latestBlock).toBeNull();
+      } finally {
+        delete process.env.POLYGON_RPC_URL;
+      }
     });
   });
 });
