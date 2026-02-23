@@ -100,6 +100,10 @@ tags:
     description: Offline verification tokens and sync
   - name: IssuanceDelegation
     description: Delegated credential issuance chains
+  - name: ZKP
+    description: Zero-knowledge proof circuit discovery, verification, and benchmarking
+  - name: Presentations
+    description: W3C Verifiable Presentation creation, listing, retrieval, and revocation
 
 # ============================================================================
 # SECURITY SCHEMES
@@ -8635,3 +8639,866 @@ paths:
                           type: integer
                         confirmedAnchors:
                           type: integer
+
+  # ============================================================================
+  # ZKP — Zero-Knowledge Proof Verification (Phase 2C/2D)
+  # ============================================================================
+
+  /zkp/circuits:
+    get:
+      operationId: listZkpCircuits
+      summary: List available ZK circuits
+      tags:
+        - ZKP
+      responses:
+        "200":
+          description: Available ZK circuit metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  circuits:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [age_range, membership, equality, range]
+                        description:
+                          type: string
+                        publicSignalNames:
+                          type: array
+                          items:
+                            type: string
+                        inputDescription:
+                          type: string
+                        constraints:
+                          type: integer
+                        proofSizeBytes:
+                          type: integer
+                          example: 128
+                        estimatedProvingTimeMs:
+                          type: integer
+
+  /zkp/circuits/{type}/verification-key:
+    get:
+      operationId: getZkpVerificationKey
+      summary: Get verification key for a circuit
+      tags:
+        - ZKP
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [age_range, membership, equality, range]
+      responses:
+        "200":
+          description: Groth16 verification key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  protocol:
+                    type: string
+                    example: groth16
+                  curve:
+                    type: string
+                    example: bn128
+                  nPublic:
+                    type: integer
+                  vk_alpha_1:
+                    type: array
+                    items:
+                      type: string
+                  vk_beta_2:
+                    type: array
+                    items:
+                      type: array
+                      items:
+                        type: string
+                  vk_gamma_2:
+                    type: array
+                    items:
+                      type: array
+                      items:
+                        type: string
+                  vk_delta_2:
+                    type: array
+                    items:
+                      type: array
+                      items:
+                        type: string
+                  IC:
+                    type: array
+                    items:
+                      type: array
+                      items:
+                        type: string
+        "400":
+          description: Unknown circuit type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /zkp/verify:
+    post:
+      operationId: verifyZkpProof
+      summary: Verify a Groth16 proof
+      tags:
+        - ZKP
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [circuitType, proof, publicSignals]
+              properties:
+                circuitType:
+                  type: string
+                  enum: [age_range, membership, equality, range]
+                proof:
+                  type: object
+                  required: [pi_a, pi_b, pi_c, protocol, curve]
+                  properties:
+                    pi_a:
+                      type: array
+                      items:
+                        type: string
+                    pi_b:
+                      type: array
+                      items:
+                        type: array
+                        items:
+                          type: string
+                    pi_c:
+                      type: array
+                      items:
+                        type: string
+                    protocol:
+                      type: string
+                      enum: [groth16]
+                    curve:
+                      type: string
+                      enum: [bn128]
+                publicSignals:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+      responses:
+        "200":
+          description: Proof verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                  circuitType:
+                    type: string
+                  publicSignals:
+                    type: array
+                    items:
+                      type: string
+                  verifiedAt:
+                    type: string
+                    format: date-time
+                  verificationTimeMs:
+                    type: number
+                  cached:
+                    type: boolean
+        "400":
+          description: Invalid proof or circuit type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /zkp/verify-batch:
+    post:
+      operationId: verifyZkpProofBatch
+      summary: Batch verify Groth16 proofs
+      tags:
+        - ZKP
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proofs]
+              properties:
+                proofs:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [circuitType, proof, publicSignals]
+                    properties:
+                      circuitType:
+                        type: string
+                        enum: [age_range, membership, equality, range]
+                      proof:
+                        type: object
+                        properties:
+                          pi_a:
+                            type: array
+                            items:
+                              type: string
+                          pi_b:
+                            type: array
+                            items:
+                              type: array
+                              items:
+                                type: string
+                          pi_c:
+                            type: array
+                            items:
+                              type: string
+                          protocol:
+                            type: string
+                            enum: [groth16]
+                          curve:
+                            type: string
+                            enum: [bn128]
+                      publicSignals:
+                        type: array
+                        items:
+                          type: string
+                        minItems: 1
+      responses:
+        "200":
+          description: Batch verification results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        verified:
+                          type: boolean
+                        circuitType:
+                          type: string
+                        publicSignals:
+                          type: array
+                          items:
+                            type: string
+                        verifiedAt:
+                          type: string
+                          format: date-time
+                        verificationTimeMs:
+                          type: number
+                        cached:
+                          type: boolean
+                  totalTimeMs:
+                    type: number
+        "400":
+          description: Invalid proof data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          description: Unauthorized
+
+  /zkp/benchmark:
+    post:
+      operationId: reportZkpBenchmark
+      summary: Report client ZKP benchmark
+      tags:
+        - ZKP
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [circuitType, proofGenerationMs, platform, deviceCategory]
+              properties:
+                circuitType:
+                  type: string
+                  enum: [age_range, membership, equality, range]
+                proofGenerationMs:
+                  type: number
+                  minimum: 0
+                platform:
+                  type: string
+                deviceCategory:
+                  type: string
+                  enum: [mobile, tablet, desktop, server]
+                wasmUsed:
+                  type: boolean
+                userAgent:
+                  type: string
+                  maxLength: 500
+      responses:
+        "201":
+          description: Benchmark recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recorded:
+                    type: boolean
+                  meetsTarget:
+                    type: boolean
+                  targetMs:
+                    type: integer
+                    example: 5000
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          description: Unauthorized
+
+  # ============================================================================
+  # PRESENTATIONS — Verifiable Presentations (Phase 2A/2C)
+  # ============================================================================
+
+  /presentations:
+    post:
+      operationId: createPresentation
+      summary: Create a verifiable presentation
+      tags:
+        - Presentations
+      security:
+        - BearerAuth: []
+      description: |
+        Create a W3C Verifiable Presentation from a credential.
+        Supports FULL (all claims), SELECTIVE (hash-based disclosure),
+        and ZKP (Groth16 zero-knowledge proof) proof types.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentialId, holderDidId, proofType]
+              properties:
+                credentialId:
+                  type: string
+                  format: uuid
+                holderDidId:
+                  type: string
+                  format: uuid
+                verifierDidId:
+                  type: string
+                  format: uuid
+                proofType:
+                  type: string
+                  enum: [FULL, SELECTIVE, ZKP]
+                disclosedAttributes:
+                  type: array
+                  items:
+                    type: string
+                  description: Required when proofType is SELECTIVE
+                zkpProof:
+                  type: object
+                  description: Required when proofType is ZKP
+                  properties:
+                    circuitType:
+                      type: string
+                      enum: [age_range, membership, equality, range]
+                    proof:
+                      type: object
+                      properties:
+                        pi_a:
+                          type: array
+                          items:
+                            type: string
+                        pi_b:
+                          type: array
+                          items:
+                            type: array
+                            items:
+                              type: string
+                        pi_c:
+                          type: array
+                          items:
+                            type: string
+                        protocol:
+                          type: string
+                          enum: [groth16]
+                        curve:
+                          type: string
+                          enum: [bn128]
+                    publicSignals:
+                      type: array
+                      items:
+                        type: string
+                      minItems: 1
+      responses:
+        "201":
+          description: Presentation created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  credentialId:
+                    type: string
+                    format: uuid
+                  holderDid:
+                    type: string
+                  proofType:
+                    type: string
+                    enum: [FULL, SELECTIVE, ZKP]
+                  disclosedAttributes:
+                    type: array
+                    items:
+                      type: string
+                  status:
+                    type: string
+                    enum: [ACTIVE]
+                  proof:
+                    type: object
+                    description: Ed25519 proof (FULL/SELECTIVE only)
+                  zkpProof:
+                    type: object
+                    description: Groth16 proof data (ZKP only)
+                  presentedAt:
+                    type: string
+                    format: date-time
+        "400":
+          description: Validation error or ZKP verification failed
+        "403":
+          description: DID or credential ownership mismatch
+        "404":
+          description: Credential not found
+
+    get:
+      operationId: listPresentations
+      summary: List holder's presentations
+      tags:
+        - Presentations
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated presentations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  presentations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        credentialId:
+                          type: string
+                          format: uuid
+                        proofType:
+                          type: string
+                          enum: [FULL, SELECTIVE, ZKP]
+                        status:
+                          type: string
+                          enum: [ACTIVE, REVOKED]
+                        presentedAt:
+                          type: string
+                          format: date-time
+                        revokedAt:
+                          type: string
+                          format: date-time
+                          nullable: true
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  pageSize:
+                    type: integer
+                  totalPages:
+                    type: integer
+
+  /presentations/{id}:
+    get:
+      operationId: getPresentation
+      summary: Get presentation details
+      tags:
+        - Presentations
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Presentation with disclosed/hashed claims
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  holderDid:
+                    type: string
+                  issuerDid:
+                    type: string
+                  credentialType:
+                    type: string
+                  proofType:
+                    type: string
+                    enum: [FULL, SELECTIVE, ZKP]
+                  disclosedAttributes:
+                    type: array
+                    items:
+                      type: string
+                  status:
+                    type: string
+                    enum: [ACTIVE, REVOKED]
+                  presentationData:
+                    type: object
+                    properties:
+                      disclosed:
+                        type: object
+                        additionalProperties: true
+                      hashed:
+                        type: object
+                        additionalProperties:
+                          type: string
+                  zkpProof:
+                    type: object
+                    description: Present only for ZKP proof type
+                  presentedAt:
+                    type: string
+                    format: date-time
+                  revokedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+        "404":
+          description: Presentation not found
+
+  /presentations/{id}/revoke:
+    post:
+      operationId: revokePresentation
+      summary: Revoke a presentation
+      tags:
+        - Presentations
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Presentation revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: REVOKED
+                  revokedAt:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+        "400":
+          description: Already revoked
+        "404":
+          description: Presentation not found
+
+  # ============================================================================
+  # DID SUB-RESOURCES (Phase 2A additions)
+  # ============================================================================
+
+  /dids/{id}/rotate:
+    post:
+      operationId: rotateDIDKeys
+      summary: Rotate DID key pair
+      tags:
+        - DIDs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Key rotated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  did:
+                    type: string
+                  publicKey:
+                    type: string
+                  documentVersion:
+                    type: integer
+        "404":
+          description: DID not found
+
+  /dids/{id}/services:
+    post:
+      operationId: addDIDService
+      summary: Add service endpoint to DID
+      tags:
+        - DIDs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, serviceEndpoint]
+              properties:
+                type:
+                  type: string
+                serviceEndpoint:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Service added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  did:
+                    type: string
+                  serviceId:
+                    type: string
+                  documentVersion:
+                    type: integer
+        "404":
+          description: DID not found
+
+  /dids/{id}/services/{serviceId}:
+    delete:
+      operationId: removeDIDService
+      summary: Remove service from DID
+      tags:
+        - DIDs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Service removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  did:
+                    type: string
+                  documentVersion:
+                    type: integer
+                  message:
+                    type: string
+        "404":
+          description: DID or service not found
+
+  # ============================================================================
+  # ISSUERS /me
+  # ============================================================================
+
+  /issuers/me:
+    get:
+      operationId: getMyIssuerProfile
+      summary: Get current issuer profile
+      tags:
+        - Issuers
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Issuer profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  organizationName:
+                    type: string
+                  trustStatus:
+                    type: string
+                    enum: [PENDING, TRUSTED, REVOKED]
+                  did:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+        "404":
+          description: No issuer profile found
+
+    patch:
+      operationId: updateMyIssuerProfile
+      summary: Update current issuer profile
+      tags:
+        - Issuers
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                organizationName:
+                  type: string
+                legalEntityId:
+                  type: string
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  organizationName:
+                    type: string
+                  updatedAt:
+                    type: string
+                    format: date-time
+        "404":
+          description: No issuer profile found
+
+  # ============================================================================
+  # WALLET — Accept Credential
+  # ============================================================================
+
+  /wallet/credentials/{id}/accept:
+    post:
+      operationId: acceptCredential
+      summary: Accept an offered credential
+      tags:
+        - Wallet
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Credential accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: ACTIVE
+                  acceptedAt:
+                    type: string
+                    format: date-time
+        "400":
+          description: Credential not in OFFERED status
+        "404":
+          description: Credential not found
