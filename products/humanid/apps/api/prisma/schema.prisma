@@ -129,6 +129,7 @@ enum AnchorChain {
 
 enum AnchorStatus {
   PENDING
+  SUBMITTED
   CONFIRMED
   FAILED
 
