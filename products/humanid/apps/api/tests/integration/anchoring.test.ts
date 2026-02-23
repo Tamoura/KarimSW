@@ -110,6 +110,70 @@ describe('Cross-Chain Anchoring - /api/v1/anchoring', () => {
         expect(res.json().chain).toBe(chain);
       }
     });
+
+    it('should return 403 when DID does not belong to user', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/anchoring/submit',
+        headers: { authorization: `Bearer ${devToken}` },
+        payload: {
+          entityType: 'DID',
+          entityId: 'nonexistent-did-id',
+          chain: 'POLYGON',
+          dataHash: 'a'.repeat(64),
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('should return 403 when credential does not belong to user', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/anchoring/submit',
+        headers: { authorization: `Bearer ${devToken}` },
+        payload: {
+          entityType: 'CREDENTIAL',
+          entityId: 'nonexistent-credential-id',
+          chain: 'POLYGON',
+          dataHash: 'a'.repeat(64),
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('should return 403 when REVOCATION entity does not belong to user', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/anchoring/submit',
+        headers: { authorization: `Bearer ${devToken}` },
+        payload: {
+          entityType: 'REVOCATION',
+          entityId: 'nonexistent-revocation-id',
+          chain: 'POLYGON',
+          dataHash: 'a'.repeat(64),
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('should return 400 for invalid dataHash length', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/anchoring/submit',
+        headers: { authorization: `Bearer ${devToken}` },
+        payload: {
+          entityType: 'DID',
+          entityId: testDidId,
+          chain: 'POLYGON',
+          dataHash: 'tooshort',
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
   });
 
   describe('GET /api/v1/anchoring', () => {
@@ -124,6 +188,43 @@ describe('Cross-Chain Anchoring - /api/v1/anchoring', () => {
       const body = res.json();
       expect(body).toHaveProperty('anchors');
       expect(body.anchors.length).toBeGreaterThan(0);
+    });
+
+    it('should list anchors with status filter', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/anchoring?status=PENDING',
+        headers: { authorization: `Bearer ${devToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body).toHaveProperty('anchors');
+    });
+
+    it('should list anchors with entityType filter', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/anchoring?entityType=DID',
+        headers: { authorization: `Bearer ${devToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body).toHaveProperty('anchors');
+    });
+
+    it('should list anchors with pagination', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/anchoring?page=1&limit=5',
+        headers: { authorization: `Bearer ${devToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.pageSize).toBe(5);
+      expect(body.page).toBe(1);
     });
   });
 
@@ -140,6 +241,16 @@ describe('Cross-Chain Anchoring - /api/v1/anchoring', () => {
       expect(body).toHaveProperty('anchored');
       expect(body).toHaveProperty('chain');
       expect(body).toHaveProperty('dataHash');
+    });
+
+    it('should return 404 for non-existent anchor', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/anchoring/nonexistent-id/verify',
+        headers: { authorization: `Bearer ${devToken}` },
+      });
+
+      expect(res.statusCode).toBe(404);
     });
   });
 

@@ -146,7 +146,7 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // GET /api/v1/anchoring/:id/verify - Verify anchor
+  // GET /api/v1/anchoring/:id/verify - Verify anchor (with on-chain check)
   fastify.get('/:id/verify', async (request, reply) => {
     try {
       await fastify.authenticate(request);
@@ -155,7 +155,7 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
       const anchor = await fastify.prisma.blockchainAnchor.findUnique({ where: { id } });
       if (!anchor) throw new AppError(404, 'not-found', 'Anchor not found');
 
-      return reply.send({
+      const response: Record<string, unknown> = {
         anchored: anchor.status === 'CONFIRMED',
         chain: anchor.chain,
         dataHash: anchor.dataHash,
@@ -163,15 +163,49 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
         blockNumber: anchor.blockNumber,
         status: anchor.status,
         anchoredAt: anchor.anchoredAt?.toISOString() || null,
-      });
+        onChainVerified: false,
+      };
+
+      // On-chain verification when RPC is available and anchor is CONFIRMED
+      const rpcUrl = process.env.POLYGON_RPC_URL;
+      if (rpcUrl && anchor.status === 'CONFIRMED' && anchor.transactionHash) {
+        try {
+          const { JsonRpcProvider } = await import('ethers');
+          const provider = new JsonRpcProvider(rpcUrl);
+          const receipt = await provider.getTransactionReceipt(anchor.transactionHash);
+          if (receipt && receipt.status === 1) {
+            response.onChainVerified = true;
+            response.confirmations = receipt.confirmations;
+          }
+        } catch {
+          // RPC unavailable — return DB status only
+        }
+      }
+
+      return reply.send(response);
     } catch (error) {
       if (error instanceof AppError) return reply.code(error.statusCode).send(error.toJSON());
       throw error;
     }
   });
 
-  // GET /api/v1/anchoring/chains - Chain health status
+  // GET /api/v1/anchoring/chains - Chain health status (with RPC ping)
   fastify.get('/chains', async (_request, reply) => {
+    const rpcUrl = process.env.POLYGON_RPC_URL;
+    let rpcConnected = false;
+    let latestBlock: number | null = null;
+
+    if (rpcUrl) {
+      try {
+        const { JsonRpcProvider } = await import('ethers');
+        const provider = new JsonRpcProvider(rpcUrl);
+        latestBlock = await provider.getBlockNumber();
+        rpcConnected = true;
+      } catch {
+        // RPC unavailable
+      }
+    }
+
     const chainStats = await Promise.all(
       SUPPORTED_CHAINS.map(async (chain) => {
         const count = await fastify.prisma.blockchainAnchor.count({ where: { chain } });
@@ -181,6 +215,8 @@ const anchoringRoutes: FastifyPluginAsync = async (fastify) => {
           status: 'available',
           totalAnchors: count,
           confirmedAnchors: confirmed,
+          rpcConnected: chain === 'POLYGON' ? rpcConnected : false,
+          latestBlock: chain === 'POLYGON' ? latestBlock : null,
         };
       })
     );

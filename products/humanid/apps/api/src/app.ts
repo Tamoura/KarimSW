@@ -52,6 +52,9 @@ import i18nRoutes from './routes/v1/i18n.js';
 import gdprRoutes from './routes/v1/gdpr.js';
 import presentationRoutes from './routes/v1/presentations.js';
 
+// Services
+import { startAnchorProcessor } from './services/anchor-processor.js';
+
 // Utils
 import { logger } from './utils/logger.js';
 import { AppError } from './types/index.js';
@@ -397,6 +400,30 @@ export async function buildApp(): Promise<FastifyInstance> {
       request_id: request.id,
     });
   });
+
+  // 12. Anchor processor (only when blockchain config is present)
+  const polygonRpcUrl = process.env.POLYGON_RPC_URL;
+  const polygonPrivateKey = process.env.POLYGON_PRIVATE_KEY;
+  const polygonContractAddress = process.env.POLYGON_CONTRACT_ADDRESS;
+
+  if (polygonRpcUrl && polygonPrivateKey && polygonContractAddress) {
+    let stopProcessor: (() => void) | null = null;
+
+    fastify.addHook('onReady', () => {
+      stopProcessor = startAnchorProcessor(fastify.prisma, {
+        rpcUrl: polygonRpcUrl,
+        privateKey: polygonPrivateKey,
+        contractAddress: polygonContractAddress,
+      });
+    });
+
+    fastify.addHook('onClose', async () => {
+      if (stopProcessor) {
+        stopProcessor();
+        stopProcessor = null;
+      }
+    });
+  }
 
   return fastify;
 }
