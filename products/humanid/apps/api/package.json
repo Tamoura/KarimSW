@@ -69,6 +69,11 @@
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
+  "overrides": {
+    "snarkjs": {
+      "bfj": "^9.1.3"
+    }
+  },
   "engines": {
     "node": ">=20.0.0"
   }
