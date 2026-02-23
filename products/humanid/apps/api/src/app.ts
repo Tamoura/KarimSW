@@ -51,6 +51,7 @@ import governanceRoutes from './routes/v1/governance.js';
 import i18nRoutes from './routes/v1/i18n.js';
 import gdprRoutes from './routes/v1/gdpr.js';
 import presentationRoutes from './routes/v1/presentations.js';
+import zkpRoutes from './routes/v1/zkp.js';
 
 // Services
 import { startAnchorProcessor } from './services/anchor-processor.js';
@@ -294,6 +295,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await fastify.register(i18nRoutes, { prefix: '/api/v1/i18n' });
   await fastify.register(gdprRoutes, { prefix: '/api/v1/me' });
   await fastify.register(presentationRoutes, { prefix: '/api/v1/presentations' });
+  await fastify.register(zkpRoutes, { prefix: '/api/v1/zkp' });
 
   // /.well-known/security.txt - RFC 9116
   fastify.get('/.well-known/security.txt', async (_request, reply) => {

@@ -15,6 +15,8 @@ module.exports = {
     // to require() files inside ESM packages. This maps the import to a
     // CJS shim that loads the source via vm.Script, bypassing the check.
     '^@noble/ed25519$': '<rootDir>/tests/__shims__/noble-ed25519.cjs',
+    // snarkjs ships ESM-first but includes a CJS build.
+    '^snarkjs$': '<rootDir>/node_modules/snarkjs/build/main.cjs',
   },
   transformIgnorePatterns: [
     'node_modules/(?!@noble/ed25519/)',
