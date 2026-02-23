@@ -19,6 +19,7 @@ import { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { clearProofCache } from '../../src/services/zkp.service';
 
 const prisma = new PrismaClient();
 const TEST_PASSWORD = 'Test123!@#';
@@ -79,6 +80,7 @@ describe('ZKP Routes - /api/v1/zkp', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    clearProofCache();
   });
 
   // ==================== GET /circuits ====================
