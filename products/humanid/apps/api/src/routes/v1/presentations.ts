@@ -2,7 +2,8 @@
  * Presentation Routes - /api/v1/presentations
  *
  * W3C Verifiable Presentation creation, listing, retrieval, and revocation.
- * Supports FULL (all claims) and SELECTIVE (hash-based disclosure) proof types.
+ * Supports FULL (all claims), SELECTIVE (hash-based disclosure), and ZKP
+ * (zero-knowledge proof via Groth16) proof types.
  *
  * - Create: Holder creates a presentation from a credential
  * - List: Holder sees their presentations (paginated)
@@ -20,16 +21,30 @@ import {
   deserializePrivateKey,
 } from '../../utils/did-crypto.js';
 import { decryptClaims, decryptPrivateKey } from '../../utils/encryption.js';
+import { verifyProof, isValidCircuitType } from '../../services/zkp.service.js';
 
 // ==================== Zod Schemas ====================
+
+const zkpProofSchema = z.object({
+  circuitType: z.enum(['age_range', 'membership', 'equality', 'range']),
+  proof: z.object({
+    pi_a: z.array(z.string()),
+    pi_b: z.array(z.any()),
+    pi_c: z.array(z.string()),
+    protocol: z.literal('groth16'),
+    curve: z.literal('bn128'),
+  }),
+  publicSignals: z.array(z.string()).min(1),
+});
 
 const createPresentationSchema = z
   .object({
     credentialId: z.string().uuid('Invalid credential ID'),
     holderDidId: z.string().uuid('Invalid holder DID ID'),
     verifierDidId: z.string().uuid('Invalid verifier DID ID').optional(),
-    proofType: z.enum(['FULL', 'SELECTIVE']),
+    proofType: z.enum(['FULL', 'SELECTIVE', 'ZKP']),
     disclosedAttributes: z.array(z.string().min(1)).optional(),
+    zkpProof: zkpProofSchema.optional(),
   })
   .refine(
     (data) => {
@@ -45,6 +60,18 @@ const createPresentationSchema = z
       message:
         'disclosedAttributes is required for SELECTIVE proof type',
       path: ['disclosedAttributes'],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.proofType === 'ZKP') {
+        return !!data.zkpProof;
+      }
+      return true;
+    },
+    {
+      message: 'zkpProof is required for ZKP proof type',
+      path: ['zkpProof'],
     }
   );
 
@@ -92,6 +119,68 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
           'Credential does not belong to the specified holder DID'
         );
       }
+
+      // ==================== ZKP Branch ====================
+      if (body.proofType === 'ZKP') {
+        const zkp = body.zkpProof!;
+
+        // Verify the Groth16 proof via snarkjs
+        const verifyResult = await verifyProof(
+          zkp.circuitType,
+          zkp.proof,
+          zkp.publicSignals
+        );
+
+        if (!verifyResult.verified) {
+          throw new AppError(
+            400,
+            'zkp-verification-failed',
+            'zkp-verification-failed'
+          );
+        }
+
+        const zkpProofData = {
+          circuitType: zkp.circuitType,
+          proof: zkp.proof,
+          publicSignals: zkp.publicSignals,
+          verified: true,
+          verifiedAt: verifyResult.verifiedAt,
+        };
+
+        // ZKP presentations disclose nothing — predicates only
+        const presentation =
+          await fastify.prisma.credentialPresentation.create({
+            data: {
+              credentialId: credential.id,
+              holderDidId: body.holderDidId,
+              verifierDidId: body.verifierDidId || null,
+              disclosedAttributes: [],
+              proofType: 'ZKP',
+              zkpProof: zkpProofData,
+              status: 'ACTIVE',
+              presentedAt: new Date(),
+            },
+          });
+
+        logger.info('ZKP Presentation created', {
+          presentationId: presentation.id,
+          credentialId: credential.id,
+          circuitType: zkp.circuitType,
+        });
+
+        return reply.code(201).send({
+          id: presentation.id,
+          credentialId: presentation.credentialId,
+          holderDid: holderDid.did,
+          proofType: presentation.proofType,
+          disclosedAttributes: presentation.disclosedAttributes,
+          status: presentation.status,
+          zkpProof: zkpProofData,
+          presentedAt: presentation.presentedAt.toISOString(),
+        });
+      }
+
+      // ==================== FULL / SELECTIVE Branch ====================
 
       // Decrypt claims
       let claims: Record<string, unknown>;
@@ -342,7 +431,7 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      return reply.send({
+      const response: Record<string, unknown> = {
         id: presentation.id,
         credentialId: presentation.credentialId,
         holderDid: presentation.holderDid.did,
@@ -354,7 +443,14 @@ const presentationRoutes: FastifyPluginAsync = async (fastify) => {
         presentationData,
         presentedAt: presentation.presentedAt.toISOString(),
         revokedAt: presentation.revokedAt?.toISOString() || null,
-      });
+      };
+
+      // Include zkpProof data for ZKP presentations
+      if (presentation.proofType === 'ZKP' && presentation.zkpProof) {
+        response.zkpProof = presentation.zkpProof;
+      }
+
+      return reply.send(response);
     } catch (error) {
       if (error instanceof AppError) {
         return reply.code(error.statusCode).send(error.toJSON());
