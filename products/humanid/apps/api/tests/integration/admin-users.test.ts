@@ -139,6 +139,20 @@ describe('Admin Users - /api/v1/admin/users', () => {
     });
   });
 
+  describe('GET /api/v1/admin/users with status filter', () => {
+    it('should filter users by status', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/admin/users?status=ACTIVE',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.users.every((u: { status: string }) => u.status === 'ACTIVE')).toBe(true);
+    });
+  });
+
   describe('PATCH /api/v1/admin/users/:id/suspend', () => {
     it('should suspend an active user', async () => {
       const res = await app.inject({
@@ -150,6 +164,27 @@ describe('Admin Users - /api/v1/admin/users', () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.status).toBe('SUSPENDED');
+    });
+
+    it('should return 400 when user is already suspended', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/admin/users/${targetUserId}/suspend`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().detail).toContain('already suspended');
+    });
+
+    it('should return 404 for non-existent user', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/admin/users/00000000-0000-0000-0000-000000000000/suspend',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(404);
     });
 
     it('should reject non-admin users with 403', async () => {
@@ -173,6 +208,27 @@ describe('Admin Users - /api/v1/admin/users', () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.status).toBe('ACTIVE');
+    });
+
+    it('should return 400 when user is already active', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/admin/users/${targetUserId}/reactivate`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().detail).toContain('already active');
+    });
+
+    it('should return 404 for non-existent user', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/admin/users/00000000-0000-0000-0000-000000000000/reactivate',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(404);
     });
   });
 });

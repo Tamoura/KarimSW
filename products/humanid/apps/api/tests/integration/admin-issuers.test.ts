@@ -164,6 +164,20 @@ describe('Admin Issuers - /api/v1/admin/issuers', () => {
     });
   });
 
+  describe('GET /api/v1/admin/issuers with status filter', () => {
+    it('should filter issuers by trust status', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/admin/issuers?status=PENDING',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.issuers.every((i: { trustStatus: string }) => i.trustStatus === 'PENDING')).toBe(true);
+    });
+  });
+
   describe('PATCH /api/v1/admin/issuers/:id/approve', () => {
     it('should approve a pending issuer', async () => {
       const res = await app.inject({
@@ -176,6 +190,27 @@ describe('Admin Issuers - /api/v1/admin/issuers', () => {
       const body = res.json();
       expect(body.trustStatus).toBe('TRUSTED');
       expect(body.verifiedAt).toBeTruthy();
+    });
+
+    it('should return 400 when issuer is already approved', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/admin/issuers/${issuerId}/approve`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().detail).toContain('already approved');
+    });
+
+    it('should return 404 for non-existent issuer', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/admin/issuers/00000000-0000-0000-0000-000000000000/approve',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(404);
     });
   });
 
@@ -190,6 +225,27 @@ describe('Admin Issuers - /api/v1/admin/issuers', () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.trustStatus).toBe('REVOKED');
+    });
+
+    it('should return 400 when issuer is already suspended', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/admin/issuers/${issuerId}/suspend`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().detail).toContain('already suspended');
+    });
+
+    it('should return 404 for non-existent issuer', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/admin/issuers/00000000-0000-0000-0000-000000000000/suspend',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(res.statusCode).toBe(404);
     });
   });
 });
