@@ -217,9 +217,9 @@ graph TD
             VERIFY_R["Verification Routes<br/>POST /api/v1/verify/request<br/>POST /api/v1/verify/present<br/>GET /api/v1/verify/:id/status<br/>GET /api/v1/verify/:id/result"]
             ISSUER_R["Issuer Routes<br/>POST /api/v1/issuers/register<br/>PUT /api/v1/issuers/:id/verify<br/>GET /api/v1/issuers<br/>POST /api/v1/issuers/:id/revoke"]
             DEV_R["Developer Routes<br/>POST /api/v1/developers/register<br/>POST /api/v1/developers/api-keys<br/>GET /api/v1/developers/usage<br/>POST /api/v1/developers/sandbox"]
-            ADMIN_R["Admin Routes<br/>GET /api/v1/admin/issuers<br/>GET /api/v1/admin/users<br/>GET /api/v1/admin/analytics<br/>GET /api/v1/admin/audit"]
+            ADMIN_R["Admin Routes<br/>GET/PATCH /api/v1/admin/users<br/>GET/PATCH /api/v1/admin/issuers<br/>GET /api/v1/audit/stats,events"]
             TMPL_R["Template Routes<br/>GET /api/v1/templates<br/>POST /api/v1/templates<br/>PUT /api/v1/templates/:id"]
-            WALLET_R["Wallet Routes<br/>GET /api/v1/wallet/credentials<br/>GET /api/v1/wallet/sharing-history<br/>POST /api/v1/wallet/scan"]
+            WALLET_R["Wallet Routes<br/>GET /api/v1/wallet/credentials<br/>GET/DELETE /api/v1/wallet/sharing<br/>POST /api/v1/wallet/scan"]
         end
 
         subgraph "Service Layer"
@@ -287,7 +287,7 @@ graph TD
             WALLET_P["Wallet Pages<br/>/wallet, /wallet/credentials/:id,<br/>/wallet/scan, /wallet/sharing,<br/>/wallet/identity, /wallet/recovery"]
             ISSUER_P["Issuer Pages<br/>/issuer, /issuer/credentials,<br/>/issuer/credentials/new,<br/>/issuer/templates"]
             DEV_P["Developer Pages<br/>/developer, /developer/api-keys,<br/>/developer/docs, /developer/sandbox"]
-            ADMIN_P["Admin Pages<br/>/admin, /admin/issuers,<br/>/admin/users"]
+            ADMIN_P["Admin Pages<br/>/admin, /admin/issuers,<br/>/admin/users, /admin/audit"]
         end
 
         subgraph "Shared Components (@connectsw/ui)"
@@ -951,16 +951,23 @@ All endpoints use the `/api/v1/` prefix. Full OpenAPI 3.0 specification is in `o
 | 25 | Dev | POST | /developers/api-keys | JWT+Dev | Create API key | US-11 |
 | 26 | Dev | GET | /developers/usage | JWT+Dev | Get API usage stats | US-13 |
 | 27 | Dev | POST | /developers/sandbox | JWT+Dev | Create sandbox env | US-12 |
-| 28 | Admin | GET | /admin/issuers | JWT+Admin | List all issuers (admin) | US-17 |
-| 29 | Admin | GET | /admin/users | JWT+Admin | List all users (admin) | US-18 |
-| 30 | Admin | GET | /admin/analytics | JWT+Admin | Platform analytics | US-18 |
-| 31 | Admin | GET | /admin/audit | JWT+Admin | Query audit logs | US-18 |
-| 32 | Templates | GET | /templates | JWT+Issuer | List templates | US-08 |
-| 33 | Templates | POST | /templates | JWT+Issuer | Create template | US-08 |
-| 34 | Templates | PUT | /templates/:id | JWT+Issuer | Update template | US-08 |
-| 35 | Wallet | GET | /wallet/credentials | JWT | Wallet credential list | US-15 |
-| 36 | Wallet | GET | /wallet/sharing-history | JWT | Sharing history | US-06 |
-| 37 | Wallet | POST | /wallet/scan | JWT | Process scanned QR code | US-16 |
+| 28 | Admin | GET | /admin/issuers | JWT+Admin | List all issuers (paginated) | US-17 |
+| 29 | Admin | PATCH | /admin/issuers/:id/approve | JWT+Admin | Approve pending issuer | US-17 |
+| 30 | Admin | PATCH | /admin/issuers/:id/suspend | JWT+Admin | Suspend trusted issuer | US-17 |
+| 31 | Admin | GET | /admin/users | JWT+Admin | List all users (paginated) | US-18 |
+| 32 | Admin | PATCH | /admin/users/:id/suspend | JWT+Admin | Suspend active user | US-18 |
+| 33 | Admin | PATCH | /admin/users/:id/reactivate | JWT+Admin | Reactivate suspended user | US-18 |
+| 34 | Audit | GET | /audit/stats | JWT+Admin | Platform statistics | US-18 |
+| 35 | Audit | GET | /audit/events | JWT+Admin | Query audit log events | US-18 |
+| 36 | Audit | GET | /audit/events/export | JWT+Admin | Export audit events | US-18 |
+| 37 | Audit | GET | /audit/events/verify | JWT+Admin | Verify chain integrity | US-18 |
+| 38 | Templates | GET | /templates | JWT+Issuer | List templates | US-08 |
+| 39 | Templates | POST | /templates | JWT+Issuer | Create template | US-08 |
+| 40 | Templates | PUT | /templates/:id | JWT+Issuer | Update template | US-08 |
+| 41 | Wallet | GET | /wallet/credentials | JWT | Wallet credential list | US-15 |
+| 42 | Wallet | GET | /wallet/sharing | JWT | Sharing history (presentations) | US-06 |
+| 43 | Wallet | DELETE | /wallet/sharing/:id | JWT | Revoke a shared presentation | US-06 |
+| 44 | Wallet | POST | /wallet/scan | JWT | Process scanned QR code | US-16 |
 
 ### 6.2 Authentication Patterns
 
@@ -1294,7 +1301,7 @@ volumes:
 | US-03: Recovery Setup | FR-006, FR-007 | PUT /dids/:did (recovery config) | recovery_configs | P0 |
 | US-04: Receive Credential | FR-009, FR-010, FR-011 | POST /credentials/receive | credentials | P0 |
 | US-05: Selective Disclosure | FR-016, FR-017 | POST /verify/present | credential_presentations, verification_requests | P0 |
-| US-06: Revoke Shared Credential | FR-014, FR-018 | POST /credentials/:id/revoke, GET /wallet/sharing-history | credentials, credential_presentations, blockchain_anchors | P1 |
+| US-06: Revoke Shared Credential | FR-014, FR-018 | POST /credentials/:id/revoke, GET /wallet/sharing, DELETE /wallet/sharing/:id | credentials, credential_presentations, blockchain_anchors | P1 |
 | US-07: Issue Credential | FR-008, FR-012 | POST /credentials, POST /credentials/batch | credentials, credential_templates, blockchain_anchors | P0 |
 | US-08: Manage Templates | FR-013 | GET/POST/PUT /templates | credential_templates | P1 |
 | US-09: Verify Credential | FR-015 | POST /verify/present, GET /verify/:id/result | verification_requests, credential_presentations, audit_logs | P0 |
@@ -1305,8 +1312,8 @@ volumes:
 | US-14: Blockchain Anchoring | FR-025, FR-026, FR-027 | (internal -- triggered by other ops) | blockchain_anchors | P0 |
 | US-15: Wallet View | FR-011 | GET /wallet/credentials | credentials, credential_presentations | P0 |
 | US-16: QR Code Exchange | FR-009 | POST /wallet/scan | credentials, verification_requests | P1 |
-| US-17: Manage Issuers | FR-029 | GET/PUT/POST /admin/issuers, /issuers/* | issuers | P1 |
-| US-18: Platform Analytics | FR-030 | GET /admin/analytics, GET /admin/audit | audit_logs, users, dids, credentials | P2 |
+| US-17: Manage Issuers | FR-029 | GET /admin/issuers, PATCH /admin/issuers/:id/approve, PATCH /admin/issuers/:id/suspend | issuers | P1 |
+| US-18: Platform Analytics | FR-030 | GET /audit/stats, GET /audit/events, GET /audit/events/export, GET /admin/users, PATCH /admin/users/:id/suspend | audit_logs, users, dids, credentials | P1 |
 
 ### 10.2 Functional Requirement Coverage
 
@@ -1329,7 +1336,7 @@ volumes:
 | FR-015 | Four-check verification (< 2s) | POST /verify/present | verification_requests | VerificationService |
 | FR-016 | ZKP selective disclosure | POST /verify/present | credential_presentations | ZKPService |
 | FR-017 | Attribute review before approval | POST /verify/present | -- (client-side UI) | -- |
-| FR-018 | Revoke shared presentations | GET /wallet/sharing-history | credential_presentations | CredentialService |
+| FR-018 | Revoke shared presentations | GET /wallet/sharing, DELETE /wallet/sharing/:id | credential_presentations | CredentialService |
 | FR-019 | Verifier-initiated requests | POST /verify/request | verification_requests | VerificationService |
 | FR-020 | Developer registration (< 30s) | POST /developers/register | users, api_keys | AuthService |
 | FR-021 | TypeScript SDK | -- (npm package) | -- | -- (SDK) |
@@ -1340,8 +1347,8 @@ volumes:
 | FR-026 | Anchor issuance/revocation | (internal) | blockchain_anchors | AnchorService |
 | FR-027 | Retry failed anchoring (3x) | (internal) | blockchain_anchors | AnchorService |
 | FR-028 | Public blockchain explorer API | GET /admin/blockchain (Phase 2) | blockchain_anchors | AnchorService |
-| FR-029 | Trusted issuer registry | GET/PUT/POST /admin/issuers | issuers | IssuerService |
-| FR-030 | Platform analytics | GET /admin/analytics | audit_logs, users, dids | -- (Phase 2) |
+| FR-029 | Trusted issuer registry | GET /admin/issuers, PATCH /admin/issuers/:id/approve, PATCH /admin/issuers/:id/suspend | issuers | IssuerService |
+| FR-030 | Platform statistics | GET /audit/stats, GET /audit/events, GET /audit/events/export | audit_logs, users, dids | AuditService |
 
 ### 10.3 Non-Functional Requirement Mapping
 

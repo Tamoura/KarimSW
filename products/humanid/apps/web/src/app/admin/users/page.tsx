@@ -1,89 +1,27 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, getAccessToken } from "@/lib/api-client";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
-type UserStatus = "active" | "suspended";
-type FilterTab = "all" | UserStatus;
+type FilterTab = "all" | "ACTIVE" | "SUSPENDED";
 
 interface AdminUser {
   id: string;
   email: string;
+  role: string;
+  status: string;
   didCount: number;
-  joined: string;
-  lastActive: string;
-  status: UserStatus;
+  createdAt: string;
 }
 
-const mockUsers: AdminUser[] = [
-  { id: "u1", email: "alice@example.com", didCount: 2, joined: "2024-08-15", lastActive: "2026-01-20", status: "active" },
-  { id: "u2", email: "bob@company.de", didCount: 1, joined: "2024-10-22", lastActive: "2025-11-05", status: "active" },
-  { id: "u3", email: "charlie@test.com", didCount: 3, joined: "2024-04-10", lastActive: "2025-09-01", status: "suspended" },
-  { id: "u4", email: "diana@startup.io", didCount: 1, joined: "2025-01-01", lastActive: "2026-01-19", status: "active" },
-  { id: "u5", email: "eve@globalfinance.com", didCount: 4, joined: "2024-07-05", lastActive: "2025-12-30", status: "active" },
-  { id: "u6", email: "frank@utoronto.ca", didCount: 2, joined: "2024-09-14", lastActive: "2025-08-22", status: "suspended" },
-  { id: "u7", email: "grace@nhs.uk", didCount: 1, joined: "2025-02-19", lastActive: "2026-02-18", status: "active" },
-];
-
-const PAGE_SIZE = 5;
-
-interface DeleteModalProps {
-  user: AdminUser;
-  onConfirm: () => void;
-  onCancel: () => void;
-  loading: boolean;
-}
-
-function DeleteModal({ user, onConfirm, onCancel, loading }: DeleteModalProps) {
+function Spinner() {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-modal-title"
-      aria-describedby="delete-modal-desc"
-    >
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <div className="flex items-start gap-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-          </div>
-          <div>
-            <h2 id="delete-modal-title" className="text-base font-semibold text-gray-900">
-              Delete User Account
-            </h2>
-            <p className="text-sm text-gray-500 mt-0.5">{user.email}</p>
-          </div>
-        </div>
-
-        <p id="delete-modal-desc" className="text-sm text-gray-700 mb-6 leading-relaxed">
-          This will permanently delete all user data including credentials and DIDs.
-          This action cannot be undone.
-        </p>
-
-        <div className="flex gap-3 justify-end">
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            className="btn-secondary px-4 py-2 text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={loading}
-            className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label={`Confirm deletion of ${user.email}`}
-          >
-            {loading ? "Deleting..." : "Delete permanently"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
+    </svg>
   );
 }
 
@@ -93,205 +31,245 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    ACTIVE: "bg-green-100 text-green-700",
+    SUSPENDED: "bg-red-100 text-red-700",
+    DEACTIVATED: "bg-gray-100 text-gray-500",
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${styles[status] ?? "bg-gray-100 text-gray-600"}`}>
+      {status.charAt(0) + status.slice(1).toLowerCase()}
+    </span>
+  );
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const styles: Record<string, string> = {
+    ADMIN: "bg-red-100 text-red-700",
+    ISSUER: "bg-blue-100 text-blue-700",
+    DEVELOPER: "bg-purple-100 text-purple-700",
+    HOLDER: "bg-gray-100 text-gray-600",
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${styles[role] ?? "bg-gray-100 text-gray-600"}`}>
+      {role.charAt(0) + role.slice(1).toLowerCase()}
+    </span>
+  );
+}
+
+const PAGE_SIZE = 20;
+
 export default function AdminUsersPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [users, setUsers] = useState<AdminUser[]>(mockUsers);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [page, setPage] = useState(1);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleUnauthorized = useCallback(() => {
+    setAccessToken(null);
+    router.push("/login");
+  }, [router]);
+
+  const fetchUsers = useCallback(async (pageNum: number, searchQ: string, status: FilterTab) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ page: String(pageNum), limit: String(PAGE_SIZE) });
+      if (searchQ.trim()) params.set("search", searchQ.trim());
+      if (status !== "all") params.set("status", status);
+
+      const res = await apiFetch(`/admin/users?${params.toString()}`);
+      if (res.status === 401) { handleUnauthorized(); return; }
+      if (!res.ok) throw new Error("Failed to load users.");
+
+      const data = await res.json();
+      setUsers(data.users ?? []);
+      setTotal(data.total ?? 0);
+    } catch {
+      setError("Could not load users. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [handleUnauthorized]);
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token) {
-      router.push("/login");
-      return;
-    }
+    if (!token) { router.push("/login"); return; }
+    fetchUsers(1, "", "all");
+  }, [router, fetchUsers]);
 
-    async function fetchUsers() {
-      try {
-        const res = await apiFetch("/admin/users?page=1&limit=20");
-        if (res.ok) {
-          const data = await res.json();
-          setUsers(Array.isArray(data) ? data : data.users ?? mockUsers);
-        }
-      } catch {
-        // API unavailable — mock data already set
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchUsers();
-  }, [router]);
-
-  // Reset page when search or tab changes
-  useEffect(() => {
+  function handleSearch() {
     setPage(1);
-  }, [search, activeTab]);
+    fetchUsers(1, search, activeTab);
+  }
 
-  const filtered = useMemo(() => {
-    return users.filter((u) => {
-      const matchesTab = activeTab === "all" || u.status === activeTab;
-      const q = search.toLowerCase();
-      const matchesSearch =
-        !q ||
-        u.email.toLowerCase().includes(q) ||
-        u.id.toLowerCase().includes(q);
-      return matchesTab && matchesSearch;
-    });
-  }, [users, activeTab, search]);
+  function handleTabChange(tab: FilterTab) {
+    setActiveTab(tab);
+    setPage(1);
+    fetchUsers(1, search, tab);
+  }
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  function handlePageChange(newPage: number) {
+    setPage(newPage);
+    fetchUsers(newPage, search, activeTab);
+  }
 
-  async function handleSuspend(id: string) {
-    setActionLoading(id + "-suspend");
+  async function handleSuspend(id: string, email: string) {
+    if (!window.confirm(`Suspend user ${email}?`)) return;
+    setActionLoading(id);
+    setActionError(null);
+    setActionSuccess(null);
     try {
-      const res = await apiFetch(`/admin/users/${id}/suspend`, { method: "POST" });
-      if (res.ok) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === id ? { ...u, status: "suspended" } : u))
-        );
+      const res = await apiFetch(`/admin/users/${id}/suspend`, { method: "PATCH" });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError((data as { detail?: string }).detail ?? "Failed to suspend user.");
+        return;
       }
+      setUsers((prev) => prev.map((u) => u.id === id ? { ...u, status: "SUSPENDED" } : u));
+      setActionSuccess(`User ${email} has been suspended.`);
     } catch {
-      setUsers((prev) =>
-        prev.map((u) => (u.id === id ? { ...u, status: "suspended" } : u))
-      );
+      setActionError("Could not connect to the server.");
     } finally {
       setActionLoading(null);
     }
   }
 
-  async function handleDelete(user: AdminUser) {
-    setDeleteLoading(true);
+  async function handleReactivate(id: string, email: string) {
+    if (!window.confirm(`Reactivate user ${email}?`)) return;
+    setActionLoading(id);
+    setActionError(null);
+    setActionSuccess(null);
     try {
-      await apiFetch(`/admin/users/${user.id}`, { method: "DELETE" });
+      const res = await apiFetch(`/admin/users/${id}/reactivate`, { method: "PATCH" });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError((data as { detail?: string }).detail ?? "Failed to reactivate user.");
+        return;
+      }
+      setUsers((prev) => prev.map((u) => u.id === id ? { ...u, status: "ACTIVE" } : u));
+      setActionSuccess(`User ${email} has been reactivated.`);
     } catch {
-      // API unavailable — proceed with local removal
+      setActionError("Could not connect to the server.");
     } finally {
-      setUsers((prev) => prev.filter((u) => u.id !== user.id));
-      setDeleteTarget(null);
-      setDeleteLoading(false);
+      setActionLoading(null);
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
-      </div>
-    );
-  }
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const tabs: { key: FilterTab; label: string }[] = [
     { key: "all", label: "All" },
-    { key: "active", label: "Active" },
-    { key: "suspended", label: "Suspended" },
+    { key: "ACTIVE", label: "Active" },
+    { key: "SUSPENDED", label: "Suspended" },
   ];
 
   return (
-    <>
-      {deleteTarget && (
-        <DeleteModal
-          user={deleteTarget}
-          onConfirm={() => handleDelete(deleteTarget)}
-          onCancel={() => setDeleteTarget(null)}
-          loading={deleteLoading}
-        />
-      )}
-
-      <div className="min-h-screen bg-gray-50">
-        {/* Nav */}
-        <nav className="border-b border-gray-100 bg-white sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-primary-500 flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">H</span>
-                </div>
-                <span className="font-semibold text-gray-900">HumanID</span>
-                <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Admin</span>
+    <div className="min-h-screen bg-gray-50">
+      {/* Nav */}
+      <nav className="border-b border-gray-100 bg-white sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-primary-500 flex items-center justify-center">
+                <span className="text-white font-bold text-sm">H</span>
               </div>
-              <div className="flex items-center gap-4">
-                <Link href="/admin" className="text-sm text-gray-600 hover:text-gray-900">Dashboard</Link>
-                <Link href="/admin/users" className="text-sm font-medium text-primary-500">Users</Link>
-                <Link href="/admin/issuers" className="text-sm text-gray-600 hover:text-gray-900">Issuers</Link>
-                <Link href="/" className="text-sm text-gray-500 hover:text-gray-900">Exit Admin</Link>
-              </div>
+              <span className="font-semibold text-gray-900">HumanID</span>
+              <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Admin</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <Link href="/admin" className="text-sm text-gray-600 hover:text-gray-900">Dashboard</Link>
+              <Link href="/admin/users" className="text-sm font-medium text-primary-500">Users</Link>
+              <Link href="/admin/issuers" className="text-sm text-gray-600 hover:text-gray-900">Issuers</Link>
+              <Link href="/admin/audit" className="text-sm text-gray-600 hover:text-gray-900">Audit Log</Link>
+              <Link href="/" className="text-sm text-gray-500 hover:text-gray-900">Exit Admin</Link>
             </div>
           </div>
-        </nav>
+        </div>
+      </nav>
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Manage Users</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                Search users, view account status, and handle moderation actions
-              </p>
-            </div>
-            <Link href="/admin" className="btn-secondary text-sm px-4 py-2">
-              Back to Dashboard
-            </Link>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Manage Users</h1>
+            <p className="text-sm text-gray-500 mt-1">Search users, view account status, and handle moderation actions</p>
           </div>
+        </div>
 
-          {/* Search & Filters */}
-          <div className="card space-y-4">
-            {/* Search */}
-            <div className="relative">
-              <label htmlFor="user-search" className="sr-only">Search users</label>
-              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-                </svg>
-              </div>
-              <input
-                id="user-search"
-                type="search"
-                placeholder="Search by email or DID..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
+        {/* Search & Filters */}
+        <div className="card space-y-4">
+          <div className="relative">
+            <label htmlFor="user-search" className="sr-only">Search users</label>
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
             </div>
+            <input
+              id="user-search"
+              type="search"
+              placeholder="Search by email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex gap-1 p-1 bg-gray-100 rounded-lg w-fit" role="tablist" aria-label="Filter users by status">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                role="tab"
+                aria-selected={activeTab === tab.key}
+                onClick={() => handleTabChange(tab.key)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === tab.key
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            {/* Tab Filters */}
-            <div className="flex gap-1 p-1 bg-gray-100 rounded-lg w-fit" role="tablist" aria-label="Filter users by status">
-              {tabs.map((tab) => {
-                const count =
-                  tab.key === "all"
-                    ? users.length
-                    : users.filter((u) => u.status === tab.key).length;
-                return (
-                  <button
-                    key={tab.key}
-                    role="tab"
-                    aria-selected={activeTab === tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                      activeTab === tab.key
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    {tab.label}
-                    <span className={`ml-1.5 text-xs ${activeTab === tab.key ? "text-gray-500" : "text-gray-400"}`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
+        {/* Feedback */}
+        {actionSuccess && (
+          <div role="status" className="rounded-lg bg-green-50 border border-green-200 px-4 py-3">
+            <p className="text-sm text-green-700">{actionSuccess}</p>
+          </div>
+        )}
+        {(actionError || error) && (
+          <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+            <p className="text-sm text-red-700">{actionError || error}</p>
+          </div>
+        )}
+
+        {/* Users Table */}
+        {loading ? (
+          <div className="flex items-center justify-center py-24" role="status" aria-label="Loading users">
+            <div className="flex flex-col items-center gap-3">
+              <svg className="w-8 h-8 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
+              </svg>
+              <p className="text-sm text-gray-500">Loading users&hellip;</p>
             </div>
           </div>
-
-          {/* Users Table */}
+        ) : (
           <div className="card p-0 overflow-hidden">
-            {paginated.length === 0 ? (
+            {users.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center px-4">
                 <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
                   <span className="text-gray-400 text-xl">U</span>
@@ -300,14 +278,6 @@ export default function AdminUsersPage() {
                 <p className="text-gray-400 text-sm mt-1">
                   {search ? "Try a different search term or clear the filter." : "No users match the selected status."}
                 </p>
-                {(search || activeTab !== "all") && (
-                  <button
-                    onClick={() => { setSearch(""); setActiveTab("all"); }}
-                    className="mt-3 text-sm text-primary-500 hover:text-primary-600"
-                  >
-                    Clear filters
-                  </button>
-                )}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -315,58 +285,48 @@ export default function AdminUsersPage() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</th>
+                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">DIDs</th>
                       <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Joined</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Active</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                       <th className="text-right py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {paginated.map((user) => (
+                    {users.map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                         <td className="py-3.5 px-4">
                           <span className="font-medium text-gray-900">{user.email}</span>
                         </td>
+                        <td className="py-3.5 px-4"><RoleBadge role={user.role} /></td>
+                        <td className="py-3.5 px-4"><StatusBadge status={user.status} /></td>
                         <td className="py-3.5 px-4 text-gray-600 tabular-nums">{user.didCount}</td>
-                        <td className="py-3.5 px-4 text-gray-500 whitespace-nowrap">{formatDate(user.joined)}</td>
-                        <td className="py-3.5 px-4 text-gray-500 whitespace-nowrap">{formatDate(user.lastActive)}</td>
-                        <td className="py-3.5 px-4">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                              user.status === "active"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            {user.status === "active" ? "Active" : "Suspended"}
-                          </span>
-                        </td>
+                        <td className="py-3.5 px-4 text-gray-500 whitespace-nowrap">{formatDate(user.createdAt)}</td>
                         <td className="py-3.5 px-4">
                           <div className="flex items-center justify-end gap-2">
-                            <Link
-                              href={`/admin/users/${user.id}`}
-                              className="text-xs text-primary-500 hover:text-primary-600 font-medium"
-                            >
-                              View
-                            </Link>
-                            {user.status === "active" && (
+                            {user.status === "ACTIVE" ? (
                               <button
-                                onClick={() => handleSuspend(user.id)}
-                                disabled={actionLoading === user.id + "-suspend"}
-                                className="text-xs px-2.5 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium transition-colors disabled:opacity-50"
+                                onClick={() => handleSuspend(user.id, user.email)}
+                                disabled={actionLoading === user.id}
+                                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-medium transition-colors disabled:opacity-50"
                                 aria-label={`Suspend ${user.email}`}
                               >
-                                {actionLoading === user.id + "-suspend" ? "Suspending..." : "Suspend"}
+                                {actionLoading === user.id ? <Spinner /> : null}
+                                Suspend
                               </button>
+                            ) : user.status === "SUSPENDED" ? (
+                              <button
+                                onClick={() => handleReactivate(user.id, user.email)}
+                                disabled={actionLoading === user.id}
+                                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium transition-colors disabled:opacity-50"
+                                aria-label={`Reactivate ${user.email}`}
+                              >
+                                {actionLoading === user.id ? <Spinner /> : null}
+                                Reactivate
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400 italic">Deactivated</span>
                             )}
-                            <button
-                              onClick={() => setDeleteTarget(user)}
-                              className="text-xs px-2.5 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 font-medium transition-colors"
-                              aria-label={`Delete account for ${user.email}`}
-                            >
-                              Delete
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -376,46 +336,42 @@ export default function AdminUsersPage() {
               </div>
             )}
           </div>
+        )}
 
-          {/* Pagination */}
-          {filtered.length > 0 && (
-            <div className="flex items-center justify-between px-1">
-              <p className="text-sm text-gray-500">
-                Showing{" "}
-                <span className="font-medium text-gray-700">
-                  {Math.min((page - 1) * PAGE_SIZE + 1, filtered.length)}
-                </span>{" "}
-                to{" "}
-                <span className="font-medium text-gray-700">
-                  {Math.min(page * PAGE_SIZE, filtered.length)}
-                </span>{" "}
-                of <span className="font-medium text-gray-700">{filtered.length}</span> users
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  aria-label="Previous page"
-                >
-                  Prev
-                </button>
-                <span className="text-sm text-gray-600 px-2">
-                  Page <span className="font-medium">{page}</span> of <span className="font-medium">{totalPages}</span>
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  aria-label="Next page"
-                >
-                  Next
-                </button>
-              </div>
+        {/* Pagination */}
+        {!loading && total > 0 && totalPages > 1 && (
+          <div className="flex items-center justify-between px-1">
+            <p className="text-sm text-gray-500">
+              Showing{" "}
+              <span className="font-medium text-gray-700">{Math.min((page - 1) * PAGE_SIZE + 1, total)}</span>{" "}
+              to{" "}
+              <span className="font-medium text-gray-700">{Math.min(page * PAGE_SIZE, total)}</span>{" "}
+              of <span className="font-medium text-gray-700">{total}</span> users
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handlePageChange(page - 1)}
+                disabled={page === 1}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                aria-label="Previous page"
+              >
+                Prev
+              </button>
+              <span className="text-sm text-gray-600 px-2">
+                Page <span className="font-medium">{page}</span> of <span className="font-medium">{totalPages}</span>
+              </span>
+              <button
+                onClick={() => handlePageChange(page + 1)}
+                disabled={page === totalPages}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                aria-label="Next page"
+              >
+                Next
+              </button>
             </div>
-          )}
-        </main>
-      </div>
-    </>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }

@@ -8,8 +8,31 @@
 import { FastifyPluginAsync } from 'fastify';
 import { createHash } from 'crypto';
 import { AppError } from '../../types/index.js';
+import { buildRequireAdmin } from '../../utils/middleware.js';
 
 const auditRoutes: FastifyPluginAsync = async (fastify) => {
+  const requireAdmin = buildRequireAdmin(fastify);
+
+  // GET /api/v1/audit/stats - Admin-only platform statistics
+  fastify.get('/stats', async (request, reply) => {
+    try {
+      await requireAdmin(request);
+
+      const [totalUsers, activeDids, credentialsIssued, activeIssuers] = await Promise.all([
+        fastify.prisma.user.count(),
+        fastify.prisma.dID.count({ where: { status: 'ACTIVE' } }),
+        fastify.prisma.credential.count(),
+        fastify.prisma.issuer.count({ where: { trustStatus: 'TRUSTED' } }),
+      ]);
+
+      return reply.send({ totalUsers, activeDids, credentialsIssued, activeIssuers });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return reply.code(error.statusCode).send(error.toJSON());
+      }
+      throw error;
+    }
+  });
   // GET /api/v1/audit/events - Query audit events
   fastify.get('/events', async (request, reply) => {
     try {

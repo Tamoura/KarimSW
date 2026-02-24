@@ -66,7 +66,7 @@ graph TD
 | **Selective Disclosure** | Zero-knowledge proofs reveal only what is needed |
 | **Blockchain Anchoring** | Immutable proof of identity events on Polygon |
 | **Biometric Proofing** | FIDO2/WebAuthn for secure authentication |
-| **Developer API** | 37 RESTful endpoints with API key authentication |
+| **Developer API** | 40+ RESTful endpoints with API key authentication |
 
 ## Tech Stack
 
@@ -129,7 +129,7 @@ npm run dev
 
 ## API Overview
 
-37 endpoints organized into 9 areas:
+40+ endpoints organized into 10 areas:
 
 ```mermaid
 graph LR
@@ -140,9 +140,10 @@ graph LR
         VERIFY["Verification<br/>(4 endpoints)"]
         ISSUERS["Issuers<br/>(4 endpoints)"]
         DEVS["Developers<br/>(4 endpoints)"]
-        ADMIN["Admin<br/>(4 endpoints)"]
+        ADMIN["Admin<br/>(7 endpoints)"]
         TEMPLATES["Templates<br/>(3 endpoints)"]
-        WALLET["Wallet<br/>(3 endpoints)"]
+        WALLET["Wallet<br/>(5 endpoints)"]
+        AUDIT["Audit<br/>(4 endpoints)"]
     end
 
     style AUTH fill:#339af0,color:#fff
@@ -150,6 +151,8 @@ graph LR
     style CREDS fill:#51cf66,color:#fff
     style VERIFY fill:#845ef7,color:#fff
     style ISSUERS fill:#ff922b,color:#fff
+    style ADMIN fill:#ff6b6b,color:#fff
+    style AUDIT fill:#be4bdb,color:#fff
 ```
 
 ### Key Endpoints
@@ -164,6 +167,11 @@ graph LR
 | `/api/v1/credentials/:id/verify` | POST | Verify a credential |
 | `/api/v1/verify/request` | POST | Create verification request |
 | `/api/v1/wallet/credentials` | GET | List holder's credentials |
+| `/api/v1/wallet/sharing` | GET | Sharing history (presentations) |
+| `/api/v1/admin/users` | GET | Paginated user list (admin) |
+| `/api/v1/admin/issuers` | GET | Paginated issuer list (admin) |
+| `/api/v1/audit/stats` | GET | Platform statistics (admin) |
+| `/api/v1/audit/events` | GET | Query audit log events |
 
 ### Auth Flow
 
@@ -242,7 +250,7 @@ products/humanid/
 │   ├── PRD.md              # Product Requirements
 │   ├── architecture.md     # System Architecture
 │   ├── security.md         # Security Considerations
-│   ├── openapi.yaml        # API Contract (37 endpoints)
+│   ├── openapi.yaml        # API Contract (44 endpoints)
 │   └── ADRs/               # 5 Architecture Decision Records
 ├── docker-compose.yml       # PostgreSQL 15 + Redis 7
 ├── .env.example             # Environment template
@@ -256,7 +264,7 @@ products/humanid/
 | [PRD](docs/PRD.md) | Product Requirements Document |
 | [Architecture](docs/architecture.md) | System Architecture |
 | [Security](docs/security.md) | Security Considerations |
-| [OpenAPI](docs/openapi.yaml) | API Contract (37 endpoints) |
+| [OpenAPI](docs/openapi.yaml) | API Contract (44 endpoints) |
 | [ADR-001](docs/ADRs/ADR-001-did-method.md) | Custom DID Method |
 | [ADR-002](docs/ADRs/ADR-002-zkp-framework.md) | ZKP Framework Choice |
 | [ADR-003](docs/ADRs/ADR-003-blockchain-network.md) | Blockchain Network |
