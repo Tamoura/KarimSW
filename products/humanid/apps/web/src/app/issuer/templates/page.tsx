@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 interface TemplateAttribute {
   name: string;
@@ -302,10 +300,8 @@ export default function IssuerTemplatesPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchTemplates = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/templates`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchTemplates = useCallback(async () => {
+    const res = await apiFetch("/templates");
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load templates.");
     const data = await res.json();
@@ -316,7 +312,7 @@ export default function IssuerTemplatesPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
 
-    fetchTemplates(token)
+    fetchTemplates()
       .catch(() => setError("Could not load templates. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchTemplates]);
@@ -374,21 +370,13 @@ export default function IssuerTemplatesPage() {
     try {
       let res: Response;
       if (editingTemplate) {
-        res = await fetch(`${API_BASE}/templates/${editingTemplate.id}`, {
+        res = await apiFetch(`/templates/${editingTemplate.id}`, {
           method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify(payload),
         });
       } else {
-        res = await fetch(`${API_BASE}/templates`, {
+        res = await apiFetch("/templates", {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify(payload),
         });
       }
@@ -434,10 +422,7 @@ export default function IssuerTemplatesPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/templates/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/templates/${id}`, { method: "DELETE" });
 
       if (res.status === 401) { handleUnauthorized(); return; }
 
