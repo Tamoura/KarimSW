@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type AgentStatus = "ACTIVE" | "SUSPENDED" | "REVOKED";
 
@@ -126,10 +124,8 @@ export default function AgentsPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchAgents = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/agents`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchAgents = useCallback(async () => {
+    const res = await apiFetch(`/agents`);
 
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load agents.");
@@ -138,12 +134,10 @@ export default function AgentsPage() {
     setAgents(data.agents ?? []);
   }, [handleUnauthorized]);
 
-  const fetchDelegations = useCallback(async (token: string, agentId: string) => {
+  const fetchDelegations = useCallback(async (agentId: string) => {
     setLoadingDelegations(true);
     try {
-      const res = await fetch(`${API_BASE}/agents/${agentId}/delegations`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/agents/${agentId}/delegations`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 
@@ -162,7 +156,7 @@ export default function AgentsPage() {
     if (!token) { router.push("/login"); return; }
 
     setEmail("");
-    fetchAgents(token)
+    fetchAgents()
       .catch(() => setError("Could not load agent data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchAgents]);
@@ -178,8 +172,7 @@ export default function AgentsPage() {
     setVerifySuccess(null);
     setVerifyError(null);
 
-    const token = getAccessToken();
-    if (token) fetchDelegations(token, agent.id);
+    if (getAccessToken()) fetchDelegations(agent.id);
   }
 
   async function handleRegisterAgent(e: React.FormEvent) {
@@ -195,12 +188,8 @@ export default function AgentsPage() {
 
     try {
       const caps = agentCapabilities.split(",").map((c) => c.trim()).filter(Boolean);
-      const res = await fetch(`${API_BASE}/agents`, {
+      const res = await apiFetch(`/agents`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           name: agentName.trim(),
           description: agentDesc.trim() || undefined,
@@ -251,12 +240,8 @@ export default function AgentsPage() {
 
     try {
       const perms = delPermissions.split(",").map((p) => p.trim()).filter(Boolean);
-      const res = await fetch(`${API_BASE}/agents/${selectedAgent.id}/delegations`, {
+      const res = await apiFetch(`/agents/${selectedAgent.id}/delegations`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           permissions: perms,
           expiresAt: delExpiry || undefined,
@@ -300,10 +285,7 @@ export default function AgentsPage() {
     setVerifyError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/agents/${agentId}/verify-human`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/agents/${agentId}/verify-human`, { method: "POST" });
 
       if (res.status === 401) { handleUnauthorized(); return; }
 
@@ -336,10 +318,7 @@ export default function AgentsPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/agents/${agentId}/${action}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/agents/${agentId}/${action}`, { method: "POST" });
 
       if (res.status === 401) { handleUnauthorized(); return; }
 

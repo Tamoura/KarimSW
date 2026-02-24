@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type AnchorEntityType = "DID" | "CREDENTIAL";
 type AnchorChain = "ETHEREUM" | "SOLANA" | "ARBITRUM" | "POLYGON";
@@ -125,11 +123,10 @@ export default function AnchoringPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchData = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
+  const fetchData = useCallback(async () => {
     const [anchorsRes, chainsRes] = await Promise.all([
-      fetch(`${API_BASE}/anchoring`, { headers }),
-      fetch(`${API_BASE}/anchoring/chains`, { headers }),
+      apiFetch(`/anchoring`),
+      apiFetch(`/anchoring/chains`),
     ]);
 
     if (anchorsRes.status === 401 || chainsRes.status === 401) {
@@ -152,7 +149,7 @@ export default function AnchoringPage() {
     if (!token) { router.push("/login"); return; }
 
     setEmail("");
-    fetchData(token)
+    fetchData()
       .catch(() => setError("Could not load anchoring data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchData]);
@@ -170,12 +167,8 @@ export default function AnchoringPage() {
     setSubmitSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/anchoring/submit`, {
+      const res = await apiFetch(`/anchoring/submit`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           entityType: submitEntityType,
           entityId: submitEntityId.trim(),
@@ -224,9 +217,7 @@ export default function AnchoringPage() {
     setVerifyResult(null);
 
     try {
-      const res = await fetch(`${API_BASE}/anchoring/${anchorId}/verify`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/anchoring/${anchorId}/verify`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 

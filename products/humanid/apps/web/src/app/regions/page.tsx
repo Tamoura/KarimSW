@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type RegionHealth = "HEALTHY" | "DEGRADED" | "OFFLINE";
 
@@ -108,10 +106,8 @@ export default function RegionsPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchRegions = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/regions`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchRegions = useCallback(async () => {
+    const res = await apiFetch(`/regions`);
 
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load regions.");
@@ -126,7 +122,7 @@ export default function RegionsPage() {
     if (!token) { router.push("/login"); return; }
 
     setEmail("");
-    fetchRegions(token)
+    fetchRegions()
       .catch(() => setError("Could not load region data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchRegions]);
@@ -145,12 +141,8 @@ export default function RegionsPage() {
     setRegSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/regions`, {
+      const res = await apiFetch(`/regions`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           name: regName.trim(),
           code: regCode.trim().toUpperCase(),
@@ -200,12 +192,8 @@ export default function RegionsPage() {
       if (cfgLatency.trim()) payload.latencyMs = parseInt(cfgLatency, 10);
       if (cfgResidency.trim()) payload.dataResidency = cfgResidency.trim();
 
-      const res = await fetch(`${API_BASE}/regions/${selectedRegion.id}/config`, {
+      const res = await apiFetch(`/regions/${selectedRegion.id}/config`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(payload),
       });
 

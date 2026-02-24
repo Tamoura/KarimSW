@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 type ReportStatus = "OPEN" | "TRIAGED" | "IN_PROGRESS" | "RESOLVED" | "DUPLICATE" | "INVALID";
@@ -148,12 +146,10 @@ export default function SecurityPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchData = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
-
+  const fetchData = useCallback(async () => {
     const [reportsRes, advisoriesRes] = await Promise.all([
-      fetch(`${API_BASE}/security/reports`, { headers }),
-      fetch(`${API_BASE}/security/advisories`, { headers }),
+      apiFetch(`/security/reports`),
+      apiFetch(`/security/advisories`),
     ]);
 
     if (reportsRes.status === 401) { handleUnauthorized(); return; }
@@ -175,7 +171,7 @@ export default function SecurityPage() {
     if (!token) { router.push("/login"); return; }
 
     setEmail("");
-    fetchData(token)
+    fetchData()
       .catch(() => setError("Could not load security data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchData]);
@@ -193,12 +189,8 @@ export default function SecurityPage() {
     setSubmitSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/security/reports`, {
+      const res = await apiFetch(`/security/reports`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           title: rptTitle.trim(),
           description: rptDescription.trim(),
@@ -249,12 +241,8 @@ export default function SecurityPage() {
       const payload: Record<string, unknown> = { status: updateStatus };
       if (updateBounty.trim()) payload.bountyUsd = parseFloat(updateBounty);
 
-      const res = await fetch(`${API_BASE}/security/reports/${selectedReport.id}`, {
+      const res = await apiFetch(`/security/reports/${selectedReport.id}`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(payload),
       });
 
@@ -299,12 +287,8 @@ export default function SecurityPage() {
     setAdvSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/security/advisories`, {
+      const res = await apiFetch(`/security/advisories`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           title: advTitle.trim(),
           summary: advSummary.trim(),

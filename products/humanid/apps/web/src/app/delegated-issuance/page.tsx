@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type DelegationStatus = "ACTIVE" | "REVOKED" | "EXPIRED";
 
@@ -111,10 +109,8 @@ export default function DelegatedIssuancePage() {
     router.push("/login");
   }, [router]);
 
-  const fetchDelegations = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/issuance-delegation`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchDelegations = useCallback(async () => {
+    const res = await apiFetch(`/issuance-delegation`);
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load delegations.");
     const data = await res.json();
@@ -125,7 +121,7 @@ export default function DelegatedIssuancePage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
     setEmail("");
-    fetchDelegations(token)
+    fetchDelegations()
       .catch(() => setError("Could not load delegations. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchDelegations]);
@@ -157,12 +153,8 @@ export default function DelegatedIssuancePage() {
     setGrantSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/issuance-delegation/grant`, {
+      const res = await apiFetch(`/issuance-delegation/grant`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           delegateId: grantDelegateId.trim(),
           credentialTypes,
@@ -209,9 +201,7 @@ export default function DelegatedIssuancePage() {
     setChainResult(null);
 
     try {
-      const res = await fetch(`${API_BASE}/issuance-delegation/verify-chain/${encodeURIComponent(verifyDelegateId.trim())}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/issuance-delegation/verify-chain/${encodeURIComponent(verifyDelegateId.trim())}`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 
@@ -243,10 +233,7 @@ export default function DelegatedIssuancePage() {
     setRevokeSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/issuance-delegation/${id}/revoke`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/issuance-delegation/${id}/revoke`, { method: "DELETE" });
 
       if (res.status === 401) { handleUnauthorized(); return; }
 

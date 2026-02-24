@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type OrgDidType = "COMPANY" | "DEPARTMENT" | "DEVICE";
 
@@ -143,10 +141,8 @@ export default function OrgDidsPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchOrgDids = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/org-dids`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchOrgDids = useCallback(async () => {
+    const res = await apiFetch(`/org-dids`);
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load org DIDs.");
     const data = await res.json();
@@ -157,7 +153,7 @@ export default function OrgDidsPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
     setEmail("");
-    fetchOrgDids(token)
+    fetchOrgDids()
       .catch(() => setError("Could not load organizational DIDs. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchOrgDids]);
@@ -173,12 +169,8 @@ export default function OrgDidsPage() {
     setCreateSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/org-dids`, {
+      const res = await apiFetch(`/org-dids`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           name: createName.trim(),
           type: createType,
@@ -223,12 +215,8 @@ export default function OrgDidsPage() {
     setChildSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/org-dids/${childParentId}/children`, {
+      const res = await apiFetch(`/org-dids/${childParentId}/children`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           name: childName.trim(),
           type: childType,
@@ -270,9 +258,7 @@ export default function OrgDidsPage() {
     setHierarchyResult(null);
 
     try {
-      const res = await fetch(`${API_BASE}/org-dids/${hierarchyOrgId}/hierarchy`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/org-dids/${hierarchyOrgId}/hierarchy`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 

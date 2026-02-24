@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type PartnershipStatus = "PENDING" | "APPROVED" | "REJECTED" | "ACTIVE";
 
@@ -115,12 +113,10 @@ export default function GovernmentPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchData = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
-
+  const fetchData = useCallback(async () => {
     const [partRes, schemeRes] = await Promise.all([
-      fetch(`${API_BASE}/government/partnerships`, { headers }),
-      fetch(`${API_BASE}/government/schemes`, { headers }),
+      apiFetch(`/government/partnerships`),
+      apiFetch(`/government/schemes`),
     ]);
 
     if (partRes.status === 401) { handleUnauthorized(); return; }
@@ -142,7 +138,7 @@ export default function GovernmentPage() {
     if (!token) { router.push("/login"); return; }
 
     setEmail("");
-    fetchData(token)
+    fetchData()
       .catch(() => setError("Could not load government partnership data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchData]);
@@ -162,12 +158,8 @@ export default function GovernmentPage() {
     setAppSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/government/partnerships`, {
+      const res = await apiFetch(`/government/partnerships`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           organizationName: appOrg.trim(),
           country: appCountry.trim(),
@@ -216,12 +208,8 @@ export default function GovernmentPage() {
     setSchemeSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/government/schemes`, {
+      const res = await apiFetch(`/government/schemes`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           name: schemeName.trim(),
           schemaType: schemeType.trim(),
