@@ -21,25 +21,11 @@ interface AuditEntry {
   ip: string;
 }
 
-const mockStats: PlatformStats = {
-  totalUsers: 1247,
-  activeDids: 3891,
-  credentialsIssued: 8234,
-  activeIssuers: 42,
-};
-
-const mockAuditLog: AuditEntry[] = [
-  { id: "1", timestamp: new Date().toISOString(), actor: "alice@example.com", action: "LOGIN", resource: "auth", ip: "192.168.1.1" },
-  { id: "2", timestamp: new Date(Date.now() - 60000).toISOString(), actor: "issuer@utoronto.ca", action: "CREDENTIAL_ISSUED", resource: "credential:abc123", ip: "10.0.0.5" },
-  { id: "3", timestamp: new Date(Date.now() - 120000).toISOString(), actor: "admin@humanid.io", action: "ISSUER_APPROVED", resource: "issuer:nhs-digital", ip: "10.0.0.1" },
-  { id: "4", timestamp: new Date(Date.now() - 300000).toISOString(), actor: "bob@company.de", action: "DID_CREATED", resource: "did:web:company.de", ip: "172.16.0.42" },
-  { id: "5", timestamp: new Date(Date.now() - 600000).toISOString(), actor: "charlie@test.com", action: "CREDENTIAL_REVOKED", resource: "credential:xyz789", ip: "192.168.2.20" },
-  { id: "6", timestamp: new Date(Date.now() - 900000).toISOString(), actor: "issuer@globalfinance.com", action: "ISSUER_SUSPENDED", resource: "issuer:globalfinance", ip: "10.0.1.88" },
-  { id: "7", timestamp: new Date(Date.now() - 1200000).toISOString(), actor: "diana@example.fr", action: "LOGIN", resource: "auth", ip: "192.168.3.5" },
-  { id: "8", timestamp: new Date(Date.now() - 1500000).toISOString(), actor: "admin@humanid.io", action: "USER_SUSPENDED", resource: "user:charlie-test", ip: "10.0.0.1" },
-  { id: "9", timestamp: new Date(Date.now() - 1800000).toISOString(), actor: "eve@startup.io", action: "DID_CREATED", resource: "did:key:z6Mk...", ip: "203.0.113.7" },
-  { id: "10", timestamp: new Date(Date.now() - 2100000).toISOString(), actor: "issuer@utoronto.ca", action: "CREDENTIAL_ISSUED", resource: "credential:stu456", ip: "10.0.0.5" },
-];
+interface HealthStatus {
+  api: boolean;
+  database: boolean;
+  redis: boolean;
+}
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
@@ -58,8 +44,9 @@ function StatusDot({ ok }: { ok: boolean }) {
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<PlatformStats>(mockStats);
-  const [auditLog, setAuditLog] = useState<AuditEntry[]>(mockAuditLog);
+  const [stats, setStats] = useState<PlatformStats>({ totalUsers: 0, activeDids: 0, credentialsIssued: 0, activeIssuers: 0 });
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+  const [health, setHealth] = useState<HealthStatus>({ api: false, database: false, redis: false });
 
   useEffect(() => {
     const token = getAccessToken();
@@ -70,9 +57,10 @@ export default function AdminDashboardPage() {
 
     async function fetchData() {
       try {
-        const [statsRes, auditRes] = await Promise.allSettled([
-          apiFetch("/admin/stats"),
-          apiFetch("/audit?limit=10"),
+        const [statsRes, auditRes, healthRes] = await Promise.allSettled([
+          apiFetch("/audit/stats"),
+          apiFetch("/audit/events?limit=10"),
+          apiFetch("/health"),
         ]);
 
         if (statsRes.status === "fulfilled" && statsRes.value.ok) {
@@ -81,10 +69,26 @@ export default function AdminDashboardPage() {
         }
         if (auditRes.status === "fulfilled" && auditRes.value.ok) {
           const data = await auditRes.value.json();
-          setAuditLog(Array.isArray(data) ? data : data.entries ?? mockAuditLog);
+          const events = data.events ?? [];
+          setAuditLog(events.map((e: { id: string; createdAt: string; userId: string; action: string; entityType: string; ipAddress: string }) => ({
+            id: e.id,
+            timestamp: e.createdAt,
+            actor: e.userId ?? "unknown",
+            action: e.action,
+            resource: e.entityType,
+            ip: e.ipAddress ?? "",
+          })));
+        }
+        if (healthRes.status === "fulfilled" && healthRes.value.ok) {
+          const data = await healthRes.value.json();
+          setHealth({
+            api: true,
+            database: data.database === "ok" || data.status === "ok",
+            redis: data.redis === "ok" || data.status === "ok",
+          });
         }
       } catch {
-        // API unavailable — mock data is already set
+        // API unavailable — zeros already set
       } finally {
         setLoading(false);
       }
@@ -159,9 +163,9 @@ export default function AdminDashboardPage() {
             <h2 className="text-base font-semibold text-gray-900 mb-4">System Health</h2>
             <ul className="space-y-3">
               {[
-                { name: "API Server", ok: true },
-                { name: "Database", ok: true },
-                { name: "Redis Cache", ok: true },
+                { name: "API Server", ok: health.api },
+                { name: "Database", ok: health.database },
+                { name: "Redis Cache", ok: health.redis },
               ].map((service) => (
                 <li key={service.name} className="flex items-center justify-between">
                   <span className="text-sm text-gray-700">{service.name}</span>
