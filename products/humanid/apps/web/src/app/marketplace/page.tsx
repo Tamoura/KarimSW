@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type TrustTier = "UNVERIFIED" | "VERIFIED" | "TRUSTED";
 
@@ -90,16 +88,14 @@ export default function MarketplacePage() {
     router.push("/login");
   }, [router]);
 
-  const fetchTemplates = useCallback(async (token: string, search: string, type: string) => {
+  const fetchTemplates = useCallback(async (search: string, type: string) => {
     setLoadingTemplates(true);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (type) params.set("type", type);
 
     try {
-      const res = await fetch(`${API_BASE}/marketplace/templates?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/marketplace/templates?${params.toString()}`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
       if (!res.ok) throw new Error("Failed to load templates.");
@@ -113,16 +109,14 @@ export default function MarketplacePage() {
     }
   }, [handleUnauthorized]);
 
-  const fetchIssuers = useCallback(async (token: string, search: string, tier: string) => {
+  const fetchIssuers = useCallback(async (search: string, tier: string) => {
     setLoadingIssuers(true);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (tier) params.set("tier", tier);
 
     try {
-      const res = await fetch(`${API_BASE}/issuers/directory?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/issuers/directory?${params.toString()}`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
       if (!res.ok) return;
@@ -145,8 +139,8 @@ export default function MarketplacePage() {
     }
 
     setEmail("");
-    fetchTemplates(token, "", "");
-    fetchIssuers(token, "", "");
+    fetchTemplates("", "");
+    fetchIssuers("", "");
   }, [router, fetchTemplates, fetchIssuers]);
 
   // Debounce template search
@@ -162,29 +156,25 @@ export default function MarketplacePage() {
   }, [searchIssuer]);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) return;
-    fetchTemplates(token, debouncedTemplateSearch, filterType);
+    if (!getAccessToken()) return;
+    fetchTemplates(debouncedTemplateSearch, filterType);
   }, [debouncedTemplateSearch, filterType, fetchTemplates]);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) return;
-    fetchIssuers(token, debouncedIssuerSearch, filterTier);
+    if (!getAccessToken()) return;
+    fetchIssuers(debouncedIssuerSearch, filterTier);
   }, [debouncedIssuerSearch, filterTier, fetchIssuers]);
 
   async function handleFork(templateId: string, templateName: string) {
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     setForking(templateId);
     setForkSuccess(null);
     setForkError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/marketplace/templates/${templateId}/fork`, {
+      const res = await apiFetch(`/marketplace/templates/${templateId}/fork`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }
