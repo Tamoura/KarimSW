@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { getAccessToken, setAccessToken, apiFetch } from "@/lib/api-client";
 
 type OrgRole = "OWNER" | "ADMIN" | "MEMBER";
 
@@ -111,11 +109,10 @@ export default function OrgPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchOrgData = useCallback(async (token: string, orgId: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
+  const fetchOrgData = useCallback(async (orgId: string) => {
     const [orgRes, membersRes] = await Promise.all([
-      fetch(`${API_BASE}/orgs/${orgId}`, { headers }),
-      fetch(`${API_BASE}/orgs/${orgId}/members`, { headers }),
+      apiFetch(`/orgs/${orgId}`),
+      apiFetch(`/orgs/${orgId}/members`),
     ]);
 
     if (orgRes.status === 401 || membersRes.status === 401) {
@@ -147,7 +144,7 @@ export default function OrgPage() {
     setEmail("");
 
     if (orgId) {
-      fetchOrgData(token, orgId)
+      fetchOrgData(orgId)
         .catch(() => setError("Could not load organisation data. Please try again."))
         .finally(() => setLoading(false));
     } else {
@@ -167,12 +164,8 @@ export default function OrgPage() {
     setCreateError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/orgs`, {
+      const res = await apiFetch(`/orgs`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ name: createName.trim(), slug: createSlug.trim() }),
       });
 
@@ -195,7 +188,7 @@ export default function OrgPage() {
       setMyRole("OWNER");
 
       // Fetch members for new org
-      fetchOrgData(token, createdOrg.id).catch(() => {});
+      fetchOrgData(createdOrg.id).catch(() => {});
     } catch {
       setCreateError("Could not connect to the server.");
     } finally {
@@ -216,12 +209,8 @@ export default function OrgPage() {
     setInviteSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/orgs/${orgId}/members`, {
+      const res = await apiFetch(`/orgs/${orgId}/members`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ userId: inviteUserId.trim(), role: inviteRole }),
       });
 
@@ -260,12 +249,8 @@ export default function OrgPage() {
     setMemberActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/orgs/${orgId}/members/${userId}`, {
+      const res = await apiFetch(`/orgs/${orgId}/members/${userId}`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ role: newRole }),
       });
 
@@ -304,9 +289,8 @@ export default function OrgPage() {
     setMemberActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/orgs/${orgId}/members/${userId}`, {
+      const res = await apiFetch(`/orgs/${orgId}/members/${userId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }

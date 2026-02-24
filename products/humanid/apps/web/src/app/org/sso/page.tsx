@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { getAccessToken, setAccessToken, apiFetch } from "@/lib/api-client";
 
 type SSOProtocol = "OIDC" | "SAML";
 
@@ -105,10 +103,8 @@ export default function SSOPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchProviders = useCallback(async (token: string, orgId: string) => {
-    const res = await fetch(`${API_BASE}/sso/providers?orgId=${orgId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchProviders = useCallback(async (orgId: string) => {
+    const res = await apiFetch(`/sso/providers?orgId=${orgId}`);
 
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load SSO providers.");
@@ -129,7 +125,7 @@ export default function SSOPage() {
     setEmail("");
 
     if (orgId) {
-      fetchProviders(token, orgId)
+      fetchProviders(orgId)
         .catch(() => setError("Could not load SSO providers. Please try again."))
         .finally(() => setLoading(false));
     } else {
@@ -153,12 +149,8 @@ export default function SSOPage() {
     setOidcSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/sso/oidc`, {
+      const res = await apiFetch(`/sso/oidc`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           orgId,
           discoveryUrl: oidcDiscoveryUrl.trim(),
@@ -211,12 +203,8 @@ export default function SSOPage() {
     setSamlSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/sso/saml`, {
+      const res = await apiFetch(`/sso/saml`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           orgId,
           metadataUrl: samlMetadataUrl.trim(),
@@ -265,9 +253,8 @@ export default function SSOPage() {
 
     try {
       const endpoint = protocol === "OIDC" ? "oidc" : "saml";
-      const res = await fetch(`${API_BASE}/sso/${endpoint}?orgId=${orgId}`, {
+      const res = await apiFetch(`/sso/${endpoint}?orgId=${orgId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }
