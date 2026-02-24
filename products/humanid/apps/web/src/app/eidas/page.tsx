@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 interface EidasRequirement {
   id: string;
@@ -132,12 +130,10 @@ export default function EidasPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchAll = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
-
+  const fetchAll = useCallback(async () => {
     const [statusRes, frameworkRes] = await Promise.all([
-      fetch(`${API_BASE}/eidas/status`, { headers }),
-      fetch(`${API_BASE}/eidas/trust-framework`, { headers }),
+      apiFetch(`/eidas/status`),
+      apiFetch(`/eidas/trust-framework`),
     ]);
 
     if (statusRes.status === 401) { handleUnauthorized(); return; }
@@ -163,7 +159,7 @@ export default function EidasPage() {
 
     setEmail("");
 
-    fetchAll(token)
+    fetchAll()
       .catch(() => setError("Could not load eIDAS compliance data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchAll]);
@@ -180,12 +176,8 @@ export default function EidasPage() {
     setConversionError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/eidas/convert`, {
+      const res = await apiFetch(`/eidas/convert`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           credentialId: convertCredentialId.trim(),
           targetFormat: convertTargetFormat,

@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type ProposalStatus = "ACTIVE" | "PASSED" | "REJECTED" | "EXPIRED";
 type ProposalCategory = "protocol" | "parameter" | "policy" | "treasury";
@@ -143,11 +141,10 @@ export default function GovernancePage() {
     router.push("/login");
   }, [router]);
 
-  const fetchData = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
+  const fetchData = useCallback(async () => {
     const [proposalsRes, paramsRes] = await Promise.all([
-      fetch(`${API_BASE}/governance/proposals`, { headers }),
-      fetch(`${API_BASE}/governance/params`, { headers }),
+      apiFetch(`/governance/proposals`),
+      apiFetch(`/governance/params`),
     ]);
 
     if (proposalsRes.status === 401 || paramsRes.status === 401) {
@@ -168,7 +165,7 @@ export default function GovernancePage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
     setEmail("");
-    fetchData(token)
+    fetchData()
       .catch(() => setError("Could not load governance data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchData]);
@@ -185,12 +182,8 @@ export default function GovernancePage() {
     setCreateSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/governance/proposals`, {
+      const res = await apiFetch(`/governance/proposals`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           title: createTitle.trim(),
           description: createDescription.trim(),
@@ -236,12 +229,8 @@ export default function GovernancePage() {
     setVoteSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/governance/proposals/${voteProposal.id}/vote`, {
+      const res = await apiFetch(`/governance/proposals/${voteProposal.id}/vote`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           vote: voteChoice,
           reason: voteReason.trim() || undefined,
@@ -285,9 +274,7 @@ export default function GovernancePage() {
     setResultsData(null);
 
     try {
-      const res = await fetch(`${API_BASE}/governance/proposals/${proposalId}/results`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/governance/proposals/${proposalId}/results`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 

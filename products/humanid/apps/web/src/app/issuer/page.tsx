@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type CredentialStatus = "OFFERED" | "ACTIVE" | "REVOKED" | "EXPIRED" | "SUSPENDED";
 
@@ -155,12 +153,8 @@ function IssuerRegistrationForm({
     setFormError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/issuers`, {
+      const res = await apiFetch("/issuers", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           didId: selectedDid,
           organizationName: orgName.trim(),
@@ -306,13 +300,11 @@ export default function IssuerPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchData = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
-
+  const fetchData = useCallback(async () => {
     const [credRes, didRes, profileRes] = await Promise.all([
-      fetch(`${API_BASE}/credentials?role=issuer`, { headers }),
-      fetch(`${API_BASE}/dids`, { headers }),
-      fetch(`${API_BASE}/issuers/me`, { headers }),
+      apiFetch("/credentials?role=issuer"),
+      apiFetch("/dids"),
+      apiFetch("/issuers/me"),
     ]);
 
     if (credRes.status === 401 || didRes.status === 401) {
@@ -348,26 +340,21 @@ export default function IssuerPage() {
 
     setEmail("");
 
-    fetchData(token)
+    fetchData()
       .catch(() => setError("Could not load issuer data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchData]);
 
   async function handleRevoke(id: string) {
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     setRevokingId(id);
     setRevokeError(null);
     setRevokeSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/credentials/${id}/revoke`, {
+      const res = await apiFetch(`/credentials/${id}/revoke`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ reason: "Revoked by issuer via dashboard" }),
       });
 

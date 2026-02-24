@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type ControlStatus = "NOT_STARTED" | "IN_PROGRESS" | "IMPLEMENTED" | "VERIFIED";
 type Framework = "SOC2" | "ISO27001" | "GDPR";
@@ -137,14 +135,12 @@ export default function CompliancePage() {
     router.push("/login");
   }, [router]);
 
-  const fetchControls = useCallback(async (token: string) => {
+  const fetchControls = useCallback(async () => {
     const params = new URLSearchParams();
     if (filterFramework) params.set("framework", filterFramework);
     if (filterStatus) params.set("status", filterStatus);
 
-    const res = await fetch(`${API_BASE}/compliance/controls?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await apiFetch(`/compliance/controls?${params.toString()}`);
 
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load controls.");
@@ -160,7 +156,7 @@ export default function CompliancePage() {
     if (!token) { router.push("/login"); return; }
 
     setEmail("");
-    fetchControls(token)
+    fetchControls()
       .catch(() => setError("Could not load compliance data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchControls]);
@@ -178,12 +174,8 @@ export default function CompliancePage() {
     setCreateSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/compliance/controls`, {
+      const res = await apiFetch(`/compliance/controls`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           framework: createFramework,
           controlId: createControlId.trim(),
@@ -230,12 +222,8 @@ export default function CompliancePage() {
     setUpdateSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/compliance/controls/${selectedControl.id}`, {
+      const res = await apiFetch(`/compliance/controls/${selectedControl.id}`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           status: updateStatus,
           evidence: updateEvidence.trim() || undefined,

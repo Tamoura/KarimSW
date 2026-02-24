@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type CredentialStatus = "OFFERED" | "ACTIVE" | "REVOKED" | "EXPIRED" | "SUSPENDED";
 
@@ -126,9 +124,7 @@ export default function CredentialDetailPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
 
-    fetch(`${API_BASE}/wallet/credentials/${id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    apiFetch(`/wallet/credentials/${id}`)
       .then(async (res) => {
         if (res.status === 401) { handleUnauthorized(); return; }
         if (res.status === 404) { setError("Credential not found."); return; }
@@ -149,12 +145,8 @@ export default function CredentialDetailPage() {
     setVerifyResult(null);
 
     try {
-      const res = await fetch(`${API_BASE}/verify/credentials`, {
+      const res = await apiFetch("/verify/credentials", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ credentialId: id }),
       });
 

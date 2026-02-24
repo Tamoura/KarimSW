@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { getAccessToken, setAccessToken, apiFetch } from "@/lib/api-client";
 
 interface AuditEvent {
   id: string;
@@ -81,7 +79,6 @@ export default function AuditPage() {
   }, [router]);
 
   const fetchEvents = useCallback(async (
-    token: string,
     currentPage: number,
     action: string,
     entityType: string,
@@ -101,9 +98,7 @@ export default function AuditPage() {
     if (to) params.set("to", new Date(to).toISOString());
 
     try {
-      const res = await fetch(`${API_BASE}/audit/events?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/audit/events?${params.toString()}`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 
@@ -128,15 +123,13 @@ export default function AuditPage() {
     }
 
     setEmail("");
-    fetchEvents(token, page, filterAction, filterEntityType, filterFrom, filterTo);
+    fetchEvents(page, filterAction, filterEntityType, filterFrom, filterTo);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   function handleApplyFilters() {
-    const token = getAccessToken();
-    if (!token) return;
     setPage(1);
-    fetchEvents(token, 1, filterAction, filterEntityType, filterFrom, filterTo);
+    fetchEvents(1, filterAction, filterEntityType, filterFrom, filterTo);
   }
 
   function handleClearFilters() {
@@ -144,31 +137,22 @@ export default function AuditPage() {
     setFilterEntityType("");
     setFilterFrom("");
     setFilterTo("");
-    const token = getAccessToken();
-    if (!token) return;
     setPage(1);
-    fetchEvents(token, 1, "", "", "", "");
+    fetchEvents(1, "", "", "", "");
   }
 
   function handlePageChange(newPage: number) {
-    const token = getAccessToken();
-    if (!token) return;
     setPage(newPage);
-    fetchEvents(token, newPage, filterAction, filterEntityType, filterFrom, filterTo);
+    fetchEvents(newPage, filterAction, filterEntityType, filterFrom, filterTo);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleVerifyChain() {
-    const token = getAccessToken();
-    if (!token) return;
-
     setVerifying(true);
     setVerifyResult(null);
 
     try {
-      const res = await fetch(`${API_BASE}/audit/events/verify`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/audit/events/verify`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 
@@ -182,15 +166,10 @@ export default function AuditPage() {
   }
 
   async function handleExport(format: "json" | "csv") {
-    const token = getAccessToken();
-    if (!token) return;
-
     setExporting(true);
 
     try {
-      const res = await fetch(`${API_BASE}/audit/events/export?format=${format}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/audit/events/export?format=${format}`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
       if (!res.ok) return;

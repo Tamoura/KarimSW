@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type FedProtocol = "OIDC" | "SAML";
 type FedDirection = "INBOUND" | "OUTBOUND";
@@ -122,10 +120,8 @@ export default function FederationPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchLinks = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/federation/links`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchLinks = useCallback(async () => {
+    const res = await apiFetch(`/federation/links`);
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load federation links.");
     const data = await res.json();
@@ -136,7 +132,7 @@ export default function FederationPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
     setEmail("");
-    fetchLinks(token)
+    fetchLinks()
       .catch(() => setError("Could not load federation links. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchLinks]);
@@ -164,12 +160,8 @@ export default function FederationPage() {
     setCreateSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/federation/links`, {
+      const res = await apiFetch(`/federation/links`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           protocol: createProtocol,
           direction: createDirection,
@@ -217,9 +209,7 @@ export default function FederationPage() {
     setResolveResult(null);
 
     try {
-      const res = await fetch(`${API_BASE}/federation/resolve/${encodeURIComponent(resolveProtocolId.trim())}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/federation/resolve/${encodeURIComponent(resolveProtocolId.trim())}`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 
@@ -251,9 +241,8 @@ export default function FederationPage() {
     setDeleteSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/federation/links/${id}`, {
+      const res = await apiFetch(`/federation/links/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }

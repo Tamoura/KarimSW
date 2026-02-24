@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type TokenStatus = "ACTIVE" | "EXPIRED" | "USED";
 
@@ -121,10 +119,8 @@ export default function OfflinePage() {
     router.push("/login");
   }, [router]);
 
-  const fetchTokens = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/offline/tokens`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchTokens = useCallback(async () => {
+    const res = await apiFetch(`/offline/tokens`);
 
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load offline tokens.");
@@ -139,7 +135,7 @@ export default function OfflinePage() {
     if (!token) { router.push("/login"); return; }
 
     setEmail("");
-    fetchTokens(token)
+    fetchTokens()
       .catch(() => setError("Could not load offline token data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchTokens]);
@@ -157,12 +153,8 @@ export default function OfflinePage() {
     setGeneratedToken(null);
 
     try {
-      const res = await fetch(`${API_BASE}/offline/tokens`, {
+      const res = await apiFetch(`/offline/tokens`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           credentialId: genCredentialId.trim(),
           ttlHours: parseInt(genTtlHours, 10) || 24,
@@ -206,12 +198,8 @@ export default function OfflinePage() {
     setVerifyError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/offline/verify`, {
+      const res = await apiFetch(`/offline/verify`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ token: verifyTokenValue.trim() }),
       });
 
@@ -245,10 +233,7 @@ export default function OfflinePage() {
     setSyncError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/offline/sync`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/offline/sync`, { method: "POST" });
 
       if (res.status === 401) { handleUnauthorized(); return; }
 
@@ -266,9 +251,7 @@ export default function OfflinePage() {
       setSyncResult(data);
 
       // Refresh token list after sync
-      const freshRes = await fetch(`${API_BASE}/offline/tokens`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const freshRes = await apiFetch(`/offline/tokens`);
       if (freshRes.ok) {
         const freshData = await freshRes.json();
         setTokens(freshData.tokens ?? []);

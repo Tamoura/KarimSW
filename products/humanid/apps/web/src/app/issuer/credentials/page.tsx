@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 interface Did {
   id: string;
@@ -75,9 +73,7 @@ export default function IssuerCredentialsPage() {
       return;
     }
 
-    fetch(`${API_BASE}/dids`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    apiFetch("/dids")
       .then(async (res) => {
         if (res.status === 401) { handleUnauthorized(); return; }
         if (!res.ok) throw new Error("Failed to load DIDs.");
@@ -119,12 +115,8 @@ export default function IssuerCredentialsPage() {
     setSubmitting(true);
 
     try {
-      const res = await fetch(`${API_BASE}/credentials`, {
+      const res = await apiFetch("/credentials", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           holderDidId: holderDid.trim(),
           issuerDidId,

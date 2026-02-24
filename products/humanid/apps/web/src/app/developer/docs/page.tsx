@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, API_BASE, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -327,9 +325,7 @@ export default function DocsPage() {
     if (!token) { router.push("/login"); return; }
 
     async function loadSpec() {
-      const res = await fetch(`${API_BASE}/openapi.json`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch("/openapi.json");
 
       if (res.status === 401) { handleUnauthorized(); return; }
       if (!res.ok) throw new Error("Failed to load OpenAPI spec.");

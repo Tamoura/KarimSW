@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 const VALID_EVENTS = [
   "credential.issued",
@@ -157,12 +155,9 @@ function DeliveryLog({ webhookId }: { webhookId: string }) {
   }, [router]);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) return;
+    if (!getAccessToken()) return;
 
-    fetch(`${API_BASE}/webhooks/${webhookId}/deliveries`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    apiFetch(`/webhooks/${webhookId}/deliveries`)
       .then(async (res) => {
         if (res.status === 401) { handleUnauthorized(); return; }
         if (!res.ok) return;
@@ -280,10 +275,8 @@ export default function WebhooksPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchWebhooks = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/webhooks`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchWebhooks = useCallback(async () => {
+    const res = await apiFetch("/webhooks");
 
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load webhooks.");
@@ -302,7 +295,7 @@ export default function WebhooksPage() {
 
     setEmail("");
 
-    fetchWebhooks(token)
+    fetchWebhooks()
       .catch(() => setError("Could not load webhooks. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchWebhooks]);
@@ -321,8 +314,7 @@ export default function WebhooksPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     if (!newUrl.trim()) { setCreateError("Endpoint URL is required."); return; }
     if (newEvents.size === 0) { setCreateError("Select at least one event to subscribe to."); return; }
@@ -333,12 +325,8 @@ export default function WebhooksPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/webhooks`, {
+      const res = await apiFetch("/webhooks", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           url: newUrl.trim(),
           events: Array.from(newEvents),
@@ -379,17 +367,15 @@ export default function WebhooksPage() {
   }
 
   async function handleTest(id: string) {
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     setTesting(id);
     setActionError(null);
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/webhooks/${id}/test`, {
+      const res = await apiFetch(`/webhooks/${id}/test`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }
@@ -413,8 +399,7 @@ export default function WebhooksPage() {
   }
 
   async function handleDelete(id: string, url: string) {
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     if (!window.confirm(`Delete webhook for "${url}"? This cannot be undone.`)) return;
 
@@ -423,9 +408,8 @@ export default function WebhooksPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/webhooks/${id}`, {
+      const res = await apiFetch(`/webhooks/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }

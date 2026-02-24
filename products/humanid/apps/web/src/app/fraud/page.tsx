@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type AlertSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 type AlertStatus = "OPEN" | "INVESTIGATING" | "RESOLVED" | "FALSE_POSITIVE";
@@ -128,11 +126,10 @@ export default function FraudPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchData = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
+  const fetchData = useCallback(async () => {
     const [alertsRes, statsRes] = await Promise.all([
-      fetch(`${API_BASE}/fraud/alerts`, { headers }),
-      fetch(`${API_BASE}/fraud/stats`, { headers }),
+      apiFetch(`/fraud/alerts`),
+      apiFetch(`/fraud/stats`),
     ]);
 
     if (alertsRes.status === 401 || statsRes.status === 401) {
@@ -153,7 +150,7 @@ export default function FraudPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
     setEmail("");
-    fetchData(token)
+    fetchData()
       .catch(() => setError("Could not load fraud data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchData]);
@@ -169,9 +166,8 @@ export default function FraudPage() {
     setScanSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/fraud/scan/${encodeURIComponent(scanCredentialId.trim())}`, {
+      const res = await apiFetch(`/fraud/scan/${encodeURIComponent(scanCredentialId.trim())}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }
@@ -212,12 +208,8 @@ export default function FraudPage() {
     setUpdateSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/fraud/alerts/${selectedAlert.id}`, {
+      const res = await apiFetch(`/fraud/alerts/${selectedAlert.id}`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ status: updateStatus }),
       });
 

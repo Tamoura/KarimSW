@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 interface Locale {
   id: string;
@@ -189,10 +187,8 @@ export default function I18nPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchLocales = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/i18n/locales`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchLocales = useCallback(async () => {
+    const res = await apiFetch(`/i18n/locales`);
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load locales.");
     const data = await res.json();
@@ -203,7 +199,7 @@ export default function I18nPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
     setEmail("");
-    fetchLocales(token)
+    fetchLocales()
       .catch(() => setError("Could not load locales. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchLocales]);
@@ -221,12 +217,8 @@ export default function I18nPage() {
     setAddSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/i18n/locales`, {
+      const res = await apiFetch(`/i18n/locales`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           code: addCode.trim(),
           name: addName.trim(),
@@ -279,12 +271,8 @@ export default function I18nPage() {
     setUpdateSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/i18n/translations`, {
+      const res = await apiFetch(`/i18n/translations`, {
         method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           locale: updateLocale,
           translations,
@@ -306,7 +294,7 @@ export default function I18nPage() {
       setUpdateSuccess(`${validEntries.length} translation(s) updated for "${updateLocale}".`);
       setKvEntries([{ key: "", value: "" }]);
       // Refresh locales to update completion
-      fetchLocales(token).catch(() => {});
+      fetchLocales().catch(() => {});
     } catch {
       setUpdateError("Could not connect to the server.");
     } finally {
@@ -325,9 +313,7 @@ export default function I18nPage() {
     setTranslations(null);
 
     try {
-      const res = await fetch(`${API_BASE}/i18n/translations/${encodeURIComponent(viewLocale)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/i18n/translations/${encodeURIComponent(viewLocale)}`);
 
       if (res.status === 401) { handleUnauthorized(); return; }
 

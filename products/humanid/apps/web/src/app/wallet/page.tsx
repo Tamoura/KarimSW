@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type CredentialStatus = "OFFERED" | "ACTIVE" | "REVOKED" | "EXPIRED" | "SUSPENDED";
 
@@ -171,12 +169,10 @@ export default function WalletPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchData = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
-
+  const fetchData = useCallback(async () => {
     const [credRes, didRes] = await Promise.all([
-      fetch(`${API_BASE}/wallet/credentials`, { headers }),
-      fetch(`${API_BASE}/dids`, { headers }),
+      apiFetch("/wallet/credentials"),
+      apiFetch("/dids"),
     ]);
 
     if (credRes.status === 401 || didRes.status === 401) {
@@ -204,7 +200,7 @@ export default function WalletPage() {
 
     setEmail("");
 
-    fetchData(token)
+    fetchData()
       .catch(() => setError("Could not load your wallet. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchData]);
@@ -218,9 +214,8 @@ export default function WalletPage() {
     setAcceptSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/wallet/credentials/${id}/accept`, {
+      const res = await apiFetch(`/wallet/credentials/${id}/accept`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }
@@ -264,12 +259,8 @@ export default function WalletPage() {
     setVerifyError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/verify/credentials`, {
+      const res = await apiFetch("/verify/credentials", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ credentialId: id }),
       });
 
