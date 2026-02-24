@@ -32,53 +32,6 @@ interface PaginationMeta {
 }
 
 // ---------------------------------------------------------------------------
-// Mock data (used when API returns 404 or network error)
-// ---------------------------------------------------------------------------
-
-const MOCK_SESSIONS: SharingSession[] = [
-  {
-    id: "s1",
-    verifierName: "Lund University",
-    verifierDomain: "lu.se",
-    credentialTypes: ["University Degree"],
-    claimsDisclosed: ["Full Name", "Degree Title", "Graduation Year"],
-    sharedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    expiresAt: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "active",
-  },
-  {
-    id: "s2",
-    verifierName: "NHS England",
-    verifierDomain: "nhs.uk",
-    credentialTypes: ["Health Certificate"],
-    claimsDisclosed: ["Full Name", "Certificate Number", "Expiry Date"],
-    sharedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-    expiresAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "expired",
-  },
-  {
-    id: "s3",
-    verifierName: "Acme Financial Services",
-    verifierDomain: "acme.com",
-    credentialTypes: ["Age Proof"],
-    claimsDisclosed: ["Age \u2265 18 (zero-knowledge proof)"],
-    sharedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    expiresAt: null,
-    status: "revoked",
-  },
-  {
-    id: "s4",
-    verifierName: "Singapore ICA",
-    verifierDomain: "ica.gov.sg",
-    credentialTypes: ["National ID", "Age Proof"],
-    claimsDisclosed: ["Full Name", "ID Number", "Age \u2265 21 (zero-knowledge proof)"],
-    sharedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    expiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "active",
-  },
-];
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -386,7 +339,6 @@ export default function WalletSharingPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const [usingMock, setUsingMock] = useState(false);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -404,17 +356,10 @@ export default function WalletSharingPage() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await apiFetch("/wallet/sharing?page=1&limit=100&status=all");
+      const res = await apiFetch("/wallet/sharing?page=1&limit=100");
 
       if (res.status === 401) {
         handleUnauthorized();
-        return;
-      }
-
-      // Fall back to mock data if API endpoint not yet implemented
-      if (res.status === 404 || res.status === 501) {
-        setSessions(MOCK_SESSIONS);
-        setUsingMock(true);
         return;
       }
 
@@ -428,9 +373,7 @@ export default function WalletSharingPage() {
         _setPagination(data.pagination);
       }
     } catch {
-      // Network error — use mock data gracefully
-      setSessions(MOCK_SESSIONS);
-      setUsingMock(true);
+      throw new Error("Could not load sharing history.");
     }
   }, [handleUnauthorized]);
 
@@ -592,33 +535,6 @@ export default function WalletSharingPage() {
             Every time you&apos;ve shared a credential with a verifier
           </p>
         </div>
-
-        {/* Mock data notice */}
-        {usingMock && !loading && (
-          <div
-            role="status"
-            className="mb-6 flex items-start gap-3 rounded-lg bg-warning-50 border border-warning-200 px-4 py-3"
-          >
-            <svg
-              className="w-4 h-4 text-warning-600 shrink-0 mt-0.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
-              />
-            </svg>
-            <p className="text-xs text-warning-700">
-              Showing sample data &mdash; sharing history API is not yet available. Real sessions
-              will appear here once the endpoint is live.
-            </p>
-          </div>
-        )}
 
         {/* Loading */}
         {loading && (
