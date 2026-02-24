@@ -162,6 +162,36 @@ describe('Wallet Sharing - /api/v1/wallet/sharing', () => {
       expect(session).toHaveProperty('sharedAt');
     });
 
+    it('should handle disclosedAttributes stored as an object', async () => {
+      // Create a presentation with disclosedAttributes as an object (not array)
+      const objPres = await prisma.credentialPresentation.create({
+        data: {
+          credentialId,
+          holderDidId,
+          verifierDidId,
+          disclosedAttributes: { degree: 'BSc', university: 'Test U' },
+          proofType: 'FULL',
+          status: 'ACTIVE',
+        },
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/wallet/sharing',
+        headers: { authorization: `Bearer ${holderToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      const objSession = body.sessions.find((s: { id: string }) => s.id === objPres.id);
+      expect(objSession).toBeDefined();
+      // Object keys should be extracted
+      expect(objSession.claimsDisclosed).toEqual(expect.arrayContaining(['degree', 'university']));
+
+      // Cleanup
+      await prisma.credentialPresentation.delete({ where: { id: objPres.id } });
+    });
+
     it('should reject unauthenticated requests', async () => {
       const res = await app.inject({
         method: 'GET',
