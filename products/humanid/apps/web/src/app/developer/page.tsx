@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 interface UsageStats {
   totalKeys: number;
@@ -92,13 +90,11 @@ export default function DeveloperPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchAll = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
-
+  const fetchAll = useCallback(async () => {
     const [usageRes, sandboxRes, logsRes] = await Promise.all([
-      fetch(`${API_BASE}/developer/keys/usage`, { headers }),
-      fetch(`${API_BASE}/developer/sandbox/status`, { headers }),
-      fetch(`${API_BASE}/developer/logs?limit=5`, { headers }),
+      apiFetch("/developer/keys/usage"),
+      apiFetch("/developer/sandbox/status"),
+      apiFetch("/developer/logs?limit=5"),
     ]);
 
     if ([usageRes, sandboxRes, logsRes].some((r) => r.status === 401)) {
@@ -125,7 +121,7 @@ export default function DeveloperPage() {
 
     setEmail("");
 
-    fetchAll(token)
+    fetchAll()
       .catch(() => setError("Could not load developer portal data. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchAll]);

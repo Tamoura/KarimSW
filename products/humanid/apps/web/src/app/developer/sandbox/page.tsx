@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 interface SandboxStatus {
   environment: string;
@@ -71,25 +69,20 @@ export default function SandboxPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchStatus = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/developer/sandbox/status`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchStatus = useCallback(async () => {
+    const res = await apiFetch("/developer/sandbox/status");
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load sandbox status.");
     const data = await res.json();
     setStatus(data);
   }, [handleUnauthorized]);
 
-  const fetchLogs = useCallback(async (token: string, pageNum: number) => {
+  const fetchLogs = useCallback(async (pageNum: number) => {
     setLogsLoading(true);
     setLogsError(null);
     try {
       const offset = (pageNum - 1) * pageSize;
-      const res = await fetch(
-        `${API_BASE}/developer/logs?limit=${pageSize}&offset=${offset}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await apiFetch(`/developer/logs?limit=${pageSize}&offset=${offset}`);
       if (res.status === 401) { handleUnauthorized(); return; }
       if (!res.ok) throw new Error("Failed to load request logs.");
       const data = await res.json();
@@ -106,25 +99,23 @@ export default function SandboxPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
 
-    fetchStatus(token)
+    fetchStatus()
       .catch(() => setError("Could not load sandbox status."))
       .finally(() => setLoading(false));
 
-    fetchLogs(token, 1);
+    fetchLogs(1);
   }, [router, fetchStatus, fetchLogs]);
 
   async function handleSeed() {
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     setSeeding(true);
     setSeedError(null);
     setSeedResult(null);
 
     try {
-      const res = await fetch(`${API_BASE}/developer/sandbox/seed`, {
+      const res = await apiFetch("/developer/sandbox/seed", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }
@@ -143,8 +134,8 @@ export default function SandboxPage() {
       setSeedResult(result);
 
       // Refresh status and logs after seeding
-      fetchStatus(token).catch(() => null);
-      fetchLogs(token, 1);
+      fetchStatus().catch(() => null);
+      fetchLogs(1);
     } catch {
       setSeedError("Could not connect to the server.");
     } finally {
@@ -153,10 +144,9 @@ export default function SandboxPage() {
   }
 
   function handlePageChange(newPage: number) {
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
     setPage(newPage);
-    fetchLogs(token, newPage);
+    fetchLogs(newPage);
   }
 
   const totalPages = Math.ceil(total / pageSize);

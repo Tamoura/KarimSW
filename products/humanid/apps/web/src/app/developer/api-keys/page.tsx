@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type KeyEnvironment = "SANDBOX" | "PRODUCTION";
 type KeyStatus = "ACTIVE" | "REVOKED";
@@ -165,11 +163,10 @@ export default function ApiKeysPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchData = useCallback(async (token: string) => {
-    const headers = { Authorization: `Bearer ${token}` };
+  const fetchData = useCallback(async () => {
     const [keysRes, usageRes] = await Promise.all([
-      fetch(`${API_BASE}/developer/keys`, { headers }),
-      fetch(`${API_BASE}/developer/keys/usage`, { headers }),
+      apiFetch("/developer/keys"),
+      apiFetch("/developer/keys/usage"),
     ]);
 
     if (keysRes.status === 401 || usageRes.status === 401) {
@@ -191,15 +188,14 @@ export default function ApiKeysPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
 
-    fetchData(token)
+    fetchData()
       .catch(() => setError("Could not load API keys. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchData]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     if (!newName.trim()) {
       setActionError("Key name is required.");
@@ -211,12 +207,8 @@ export default function ApiKeysPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/developer/keys`, {
+      const res = await apiFetch("/developer/keys", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ name: newName.trim(), environment: newEnv }),
       });
 
@@ -251,8 +243,7 @@ export default function ApiKeysPage() {
   }
 
   async function handleRevoke(id: string, name: string) {
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     if (!window.confirm(`Revoke API key "${name}"? This cannot be undone.`)) return;
 
@@ -261,9 +252,8 @@ export default function ApiKeysPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/developer/keys/${id}`, {
+      const res = await apiFetch(`/developer/keys/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }
@@ -295,8 +285,7 @@ export default function ApiKeysPage() {
   }
 
   async function handleRotate(id: string, name: string) {
-    const token = getAccessToken();
-    if (!token) { handleUnauthorized(); return; }
+    if (!getAccessToken()) { handleUnauthorized(); return; }
 
     if (!window.confirm(`Rotate API key "${name}"? The old key will be revoked immediately.`)) return;
 
@@ -305,9 +294,8 @@ export default function ApiKeysPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/developer/keys/${id}/rotate`, {
+      const res = await apiFetch(`/developer/keys/${id}/rotate`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }
