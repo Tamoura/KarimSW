@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 interface Passkey {
   id: string;
@@ -79,10 +77,8 @@ export default function WalletSecurityPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchPasskeys = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/webauthn/credentials`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchPasskeys = useCallback(async () => {
+    const res = await apiFetch("/webauthn/credentials");
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load passkeys.");
     const data = await res.json();
@@ -97,7 +93,7 @@ export default function WalletSecurityPage() {
       setWebAuthnSupported(false);
     }
 
-    fetchPasskeys(token)
+    fetchPasskeys()
       .catch(() => setError("Could not load passkeys. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchPasskeys]);
@@ -117,12 +113,8 @@ export default function WalletSecurityPage() {
 
     try {
       // Step 1: Get registration options from backend
-      const optionsRes = await fetch(`${API_BASE}/webauthn/register/options`, {
+      const optionsRes = await apiFetch("/webauthn/register/options", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({}),
       });
 
@@ -166,12 +158,8 @@ export default function WalletSecurityPage() {
       const response = credential.response as AuthenticatorAttestationResponse;
 
       // Step 4: Send result to backend for verification
-      const verifyRes = await fetch(`${API_BASE}/webauthn/register/verify`, {
+      const verifyRes = await apiFetch("/webauthn/register/verify", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           id: credential.id,
           rawId: bufferToBase64url(credential.rawId),
@@ -217,9 +205,8 @@ export default function WalletSecurityPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/webauthn/credentials/${id}`, {
+      const res = await apiFetch(`/webauthn/credentials/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.status === 401) { handleUnauthorized(); return; }

@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type CredentialStatus = "OFFERED" | "ACTIVE" | "REVOKED" | "EXPIRED" | "SUSPENDED";
 
@@ -140,9 +138,7 @@ export default function WalletCredentialsPage() {
       return;
     }
 
-    fetch(`${API_BASE}/wallet/credentials`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    apiFetch("/wallet/credentials")
       .then(async (res) => {
         if (res.status === 401) { handleUnauthorized(); return; }
         if (!res.ok) throw new Error("Failed to load credentials.");

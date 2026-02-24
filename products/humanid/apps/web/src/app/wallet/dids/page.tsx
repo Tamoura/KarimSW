@@ -3,9 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAccessToken, setAccessToken } from "@/lib/api-client";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5013/api/v1";
+import { apiFetch, getAccessToken, setAccessToken } from "@/lib/api-client";
 
 type DidStatus = "ACTIVE" | "SUSPENDED" | "DEACTIVATED";
 
@@ -71,10 +69,8 @@ export default function WalletDidsPage() {
     router.push("/login");
   }, [router]);
 
-  const fetchDids = useCallback(async (token: string) => {
-    const res = await fetch(`${API_BASE}/dids`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+  const fetchDids = useCallback(async () => {
+    const res = await apiFetch("/dids");
     if (res.status === 401) { handleUnauthorized(); return; }
     if (!res.ok) throw new Error("Failed to load DIDs.");
     const data = await res.json();
@@ -85,7 +81,7 @@ export default function WalletDidsPage() {
     const token = getAccessToken();
     if (!token) { router.push("/login"); return; }
 
-    fetchDids(token)
+    fetchDids()
       .catch(() => setError("Could not load DIDs. Please try again."))
       .finally(() => setLoading(false));
   }, [router, fetchDids]);
@@ -99,12 +95,8 @@ export default function WalletDidsPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/dids`, {
+      const res = await apiFetch("/dids", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ method: newMethod }),
       });
 
@@ -143,12 +135,8 @@ export default function WalletDidsPage() {
     setActionSuccess(null);
 
     try {
-      const res = await fetch(`${API_BASE}/dids/${id}`, {
+      const res = await apiFetch(`/dids/${id}`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ status: newStatus }),
       });
 
