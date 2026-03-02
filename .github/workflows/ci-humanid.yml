@@ -211,7 +211,7 @@ jobs:
           INTERNAL_API_KEY: ${{ secrets.CI_INTERNAL_API_KEY || 'ci-test-internal-api-key' }}
           METRICS_API_KEY: ci-test-metrics-api-key
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
